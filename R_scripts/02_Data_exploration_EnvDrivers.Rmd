@@ -1,0 +1,771 @@
+---
+title: "Environmental drivers- Data exploration"
+output: html_notebook
+---
+Data exploration according to Zuur, Ieno and Elphick protocol.
+
+```{r}
+rm(list=ls())
+```
+
+
+```{r Libraries, message=FALSE}
+library(vegan)
+library(tidyverse)
+library(phyloseq) 
+library(metagenomeSeq)
+library(microbiome)
+library(rgdal)
+library(rgeos)
+library(ade4)
+library(ape)
+library(ggrepel)
+```
+
+```{r Read in data}
+#getwd()
+phylo.spring <- readRDS("../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring@sam_data)
+```
+
+# Study balance
+Investigate study design balance. Remember "metadata" representative of all birds. Recheck with adults-subset and nestling-subset.
+```{r Study balance}
+# remember to check subsets
+metadata.sub <- metadata
+metadata.sub <- metadata %>% filter(ageBinned %in% c("1week","2week"))
+metadata.sub <- metadata %>% filter(ageBinned=="adult")
+
+colnames(metadata)
+table(metadata.sub[,"nest"])
+table(metadata.sub[,"site"]) ## not very balanced, exclude FR and LS for adult-subset?
+barplot(table(metadata.sub[,"site"]))
+table(metadata.sub[,"IDLetter"])
+table(metadata.sub[,"habitat"]) ## unbalanced, randomly sample from deciduous?
+table(metadata.sub[,"ageBinned"])
+table(metadata.sub[,"broodSizeWhenSampled"]) # hist(metadata.sub$broodSizeWhenSampled) # classic normal distribution
+table(metadata.sub[,"broodSizeMax"])
+table(metadata.sub[,"Survive"]) # very biased towards survived, 187 vs 17
+table(metadata.sub[,"surviveRinged"])
+table(metadata.sub[,"survivedFledged"])
+table(metadata.sub[,"totalFledge"])
+hist(metadata.sub$totalFledge) #approaches normality, slight left skew
+table(metadata.sub[,"clutchSize"])
+hist(metadata.sub$clutchSize)
+table(metadata.sub[,"layDateFirst"])
+hist(metadata.sub$layDateFirst) # classic normal distribution
+table(metadata.sub[,"preRingedDeadID"])
+
+```
+
+```{r Data cleaning: IDLetter}
+unique(metadata[,"IDLetter"])
+```
+
+```{r, make Run column, eval=FALSE}
+# make column of Run numbers
+levels(metadata$SequencePlate)
+
+runs <- vector(mode="character",length=length(metadata$SequencePlate))
+i <- 0
+for (run in metadata$SequencePlate) {
+  i <- i+1
+  if (run=="06/03/2018") {
+    runs[i] <- "Run1"
+    } else if (run=="15/06/2018") 
+    {runs[i] <- "Run2"
+    } else if (run=="04/10/2018") {
+        runs[i] <- "Run3"
+    } else if (run=="22/10/2018") {
+          runs[i] <- "Run4"
+          } else if (run== "08/11/2018") {runs[i] <- "Run5"}
+}
+
+metadata <- cbind(metadata, runs)
+#cbind(as.character(metadata$SequencePlate), as.character(metadata$runs)) # check it aligns
+```
+
+# Sequencing depth
+Depth of sequencing should be = (total number of reads * average read length) / total length of all the exons.
+* wil simply = 1?
+* calculated before or after filtering? Probably before dada2 processing
+```{r}
+#total number of reads = 
+#average read length = 301
+# total length of all the exons =
+```
+
+# Explore alpha-diversity
+
+## Outliers
+Remember this is simply looking at response variable and not predictors.
+```{r Outliers}
+ggplot(metadata, aes(x=ageBinned, y=shannon)) +
+geom_boxplot()
+```
+
+Cleveland plot doesnt flag any particular outliers.
+```{r Cleveland dotplot}
+ggplot(metadata, aes(x=(shannon), y=row_number(shannon))) +
+  geom_point(color = "blue")
+
+row_number(sort(metadata$shannon))
+```
+
+Plot shannon vs obs number to spot outliers. What does row_number() actually return?
+```{r Diversity against obs number}
+# all metadata
+plot(row_number(metadata$shannon),metadata$shannon)
+row_number(metadata$shannon)
+rank(metadata$shannon) 
+order(metadata$shannon)
+
+# adult metadata
+plot(row_number(adults.meta$shannon),adults.meta$shannon) # 3 clear outliers at high end, 1 clear outlier at low end
+order(adults.meta$shannon) # 23 ("DW38F-276.S29"),35 ("IN6M-289.S28"), 51 ("SP26M-310.S82") high, 3 (BP7F.S1) low
+cbind(as.numeric(1:52),as.character(adults.meta$BIOM.ID), adults.meta$shannon)
+# nestling metadata
+plot(row_number(nestlings.meta$shannon),nestlings.meta$shannon) # 3 possible outliers high
+order(nestlings.meta$shannon) # 21,102,58 high
+```
+
+## Homogeneity of variance
+Homogeneity of variance is an important assumption in ANOVA and other regression-related models. For regression type analyses homogeneity can be assessed using the residuals: plot residuals vs fitted values and making a set of conditional boxplots for the residuals. Residual variation should be similar in all these graphs. Heterogeneity of variance can be fixed by transforming the response varable or using stat techniques that dont require homogeneity.
+
+Plot of residuals is not normally distributed. Linear model not appropriate for this analysis.
+```{r Homogeneity of variance}
+shannon.lm <- lm(metadata$shannon~metadata$ageBinned+metadata$habitat)
+summary(shannon.lm)
+
+# extract residuals
+e <- resid(shannon.lm)
+# extract studentized ersiduals
+r <- rstudent(shannon.lm)
+
+# plot residuals vs fitted values
+plot(fitted(shannon.lm),resid(shannon.lm)) + abline(h=0,lty=2)
+
+# identify outliers
+#outliers <- identify(fitted(shannon.lm),resid(shannon.lm),n=1) ## cant use identify with notebook??
+
+```
+
+## Data distribution
+Not all stats require normally distributed data. Linear regression assumes normality but is robust to departures.
+
+Histogram will indicate data distribution. But note can be misleading- see histogram of sparrow weight plotted altogether and then plotted by month which indicates skewness of original plot probably just related to changes over time.
+
+Histogram shows right skew of shannon div.
+```{r}
+hist(metadata$shannon)
+
+hist(nestlings.meta$shannon)
+hist(adults.meta$shannon)
+```
+
+QQplot shows deviations from normality
+```{r Data normality}
+{plot(qqnorm(metadata$shannon))
+qqline(metadata$shannon)}
+
+```
+
+H0 = data normally distributed, data is not normally distributed acccording to shapiro test.
+```{r Test for normality}
+shapiro.test(metadata$shannon)
+```
+
+## Zero-inflation
+Alpha diversity data wont have zeroes but this is very relevant for differential abundance analysis (any count data will have zeroes).
+
+## Colinearity among covariates
+<!-- look up below link when exploring correlations
+ https://stats.stackexchange.com/questions/226661/regression-interaction-term-correlated-with-the-variables -->
+
+Investigate collinearity by calculating Variance Inflation Factor (VIF) for each covariate. VIF thresholds are chosen eg 10 or more parsimonious 3. Variable with largest VIF is dropped and VIFs recalculated until all variables left in model are below threshold.
+
+Package AED had a corvif() function that calculates the vif for variables in a dataframe w/o having to run a model first but is not supported in newer versions of R. Car also has a similar function according to MixedEffectsmodelsandextensions...pdf.
+
+Can also use pairwise scatterplots comparing covariates, correlation coefficients, PCA biplots. Collinearity can be expected if spatial or temporal variables are used with variables such as rainfall etc. Use common sense/biological knowledge to decide which variables to include at start of analysis.
+
+After modelling shannon div with the all birds dataset- habitat and site have relatively high VIF (approx. 4-5) which are reduced to approx. 1 when either is droppped from the model.
+```{r}
+
+```
+
+## Relationship between x and y variables
+So Zuur paper uses a multipanel scatterplot to examine sparrow morphometric data but what can i do about categorical data- boxplots? 
+
+Even if there is no clear pattern between x and y it does not mean there is no relationship, a model with multiple explanatory variables may provide a good fit. Furthermore, this method helps flag possible outliers which may be mistakes- measurement errors, typos etc. Paper has nice plot with diagonal split with pairwise scatterplots between response and each predictor above and pearson corrleation coefficients below.
+
+```{r Date vs a-div}
+str(metadata)
+metadata$date <- as.Date(metadata$date,"%d/%m/%Y")
+
+plot(metadata$date, metadata$shannon)
+
+ggplot(metadata, aes(x = date, y = shannon)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  labs(x = "Date",y = "Alpha-diversity (shannon)") 
+
+ggplot(metadata, aes(x = date, y = chao1)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  labs(x = "Date",y = "Alpha-diversity (chao1)") 
+```
+
+## Should we consider interactions
+
+## Are obs. of response variable independent
+Verify lack of dependency by plotting residuals which should not show any structure.
+
+### Birds sampled multiple times
+Some nestlings will have been sampled at D8 and D15. These are tabulated below.
+
+```{r Individuals sampled twice}
+individuals <- paste(metadata$nest,metadata$IDLetter, sep = "")
+
+length(individuals) # 237 samples
+length(unique(individuals)) # 190 unique individuals
+table(individuals)
+str(table(individuals))
+indiv.table <- table(individuals)
+subset(indiv.table,indiv.table>1)
+```
+
+### Spatial autocorrelation
+There is likely to be spatial autocorrelation between sites ie. sites closer together may be more similar than those farther away- this is a dependency in the structure of the data and can be accounted for using mixed effects models, imposing a residual correlation structure using generalized least squares etc. Check by plotting response against spatial coordinates where a clear pattern is a sign of dependence. See: https://stats.idre.ucla.edu/other/mult-pkg/faq/general/faq-how-can-i-detectaddress-spatial-autocorrelation-in-my-data/
+```{r Spatial autocorrelation}
+# should plot by site first to see if obs cluster  ## note: control has high shannon but low chao because shannon = abundance+richness
+ggplot(metadata, aes(x=site, y=shannon)) +
+geom_boxplot()
+
+ggplot(metadata, aes(x=site, y=chao1)) +
+geom_boxplot()
+## Morans I (parametric)
+# example using Moran's I: https://stats.idre.ucla.edu/r/faq/how-can-i-calculate-morans-i-in-r/
+# see Maurice 2015 wild mice paper AND Tung baboon paper
+# response = mean(alpha.diversity of site) OR use distance matrix eg Bray-Curtis
+# predictor = Morans.I(centrepoint of site)
+```
+Mantel test checks whether two matrices are correlated. Here i am checking for correlation between site distance and mean(alpha-diversity) per site. Mantel tests supports H0=there is no correlation between the matrices. Is mean(a-div) reasonable? Test matrix with all birds in chunk below.
+```{r Spatial-autocorrelation: Mantel test, mean diveristy}
+## Mantel test (semi-parametric) examines correlation between two distance matrices 
+# https://stats.idre.ucla.edu/r/faq/how-can-i-perform-a-mantel-test-in-r/
+# response = mean(alpha.diversity of site) OR use distance matrix eg Bray-Curtis
+# predictor = spatial distance matrix
+
+# calc spatial distance matrix
+site.polygons <- readOGR("../Data/Shapefiles/Sites/","Study_sites")
+
+# calculate centroids, byid=T applies function across subgeometries ie. for each polygon
+site.centroids <- gCentroid(site.polygons, byid=TRUE, id = site.polygons$NAME)
+
+# calc mean(a-diversity/site) ## is this reasonable given the variance of a-div
+div.by.site <- metadata[,c("site","shannon")]
+mean.alpha <- div.by.site %>% filter(site!="control") %>% group_by(site) %>% summarise_at(vars(shannon), mean) %>% rename(sites.abb=site)
+
+# create site dictionary for matching site names and abbreviations
+sites.names <- c("Ballinphellic", "Carrigeen", "Castle Bernard", 
+                 "Dukes Wood", "Dunderrow", "Farran", "Garrettstown", "Innishannon", 
+                 "Kilbrittain", "Lissarda", "Piercetown", "Shippool")
+sites.abb <- c("BP","CG","CB","DW","DD","FR","GT","IN","KB","LS","PT","SP")
+site.dictionary <- as.data.frame(sites.abb,sites.names)
+
+# cbind site.dictionary then mean diversity measures to appropriate centroid/location
+site.centroids.df <- merge(site.dictionary, site.centroids, by = "row.names")
+site.centroids.df <- merge(site.centroids.df,mean.alpha, by = "sites.abb")
+rownames(site.centroids.df) <- site.centroids.df$Row.names
+
+##### calc geographic distance matrix
+
+# Need to extract 2 matrices from site.centroids.df (1) Site coordinates (2) Mean site diversity scores
+# these matrices should have site names as rownames which will presumably help ensure mantel test to testing matching values
+site.coordinates <- as.matrix(cbind(site.centroids.df$x,site.centroids.df$y))
+rownames(site.coordinates) <- site.centroids.df$Row.names
+colnames(site.coordinates) <- c("x","y")
+
+site.div <- as.matrix(site.centroids.df$shannon)
+rownames(site.div) <- site.centroids.df$Row.names
+colnames(site.div) <- "shannon"
+
+site.distance.matrix <- dist(site.coordinates) ## verify units etc correct
+diversity.distance <- dist(site.div)
+
+mantel(site.distance.matrix,diversity.distance)
+mantel.rtest(site.distance.matrix,diversity.distance, nrepet=999) ## requires "ade4" library
+
+#### mantel test against beta-diversity matrice
+## but how do i relate each site to each individual??
+```
+
+Mantel test on matrix with all birds instead of just the mean(a-div). Has virtually the same p-value as above test so H0 is supported no evidence of correlation.
+```{r Spatial-autocorrelation: Mantel test, all individuals}
+# create df with indiv birds site, site coordinates and diversity measure
+div.by.site <- meta(metadata[,c("site","shannon","BIOM.ID")]) ## meta()is a microbiome package cmd that extracts phyloseq metadata as a df
+site.centroids.dict <-select(site.centroids.df,-"shannon")
+site.centroids.dict <- site.centroids.dict %>% rename(site=sites.abb)
+
+div.by.site.centroids <- merge(div.by.site,site.centroids.dict, by = "site") ## drops 4 obs- controls?
+
+# calc distance matrices
+site.coordinates <- as.matrix(cbind(div.by.site.centroids$x,div.by.site.centroids$y))
+rownames(site.coordinates) <- div.by.site.centroids$BIOM.ID
+colnames(site.coordinates) <- c("x","y")
+
+site.div <- as.matrix(div.by.site.centroids$shannon)
+rownames(site.div) <- div.by.site.centroids$BIOM.ID
+colnames(site.div) <- "shannon"
+
+site.distance.matrix <- dist(site.coordinates) ## verify units etc correct
+diversity.distance <- dist(site.div)
+
+mantel(site.distance.matrix,diversity.distance)
+mantel.rtest(site.distance.matrix,diversity.distance, nrepet=999) ## requires "ade4" library
+```
+
+Test for spatial autocorrelation with Moran's I. This test rejects H0 that there is no spatial autocorrelation.
+```{r Spatial-autocorrelation Morans I}
+
+site.distance.matrix.inv <-as.matrix(1/site.distance.matrix) ## had infinite values instead of 1's for some reason which gave error
+diag(site.distance.matrix.inv) <- 0
+
+site.distance.matrix.inv[is.infinite(site.distance.matrix.inv)] <- 1
+
+Moran.I(div.by.site.centroids$shannon,site.distance.matrix.inv, scaled = FALSE, na.rm = FALSE, alternative = "two.sided") 
+## SOLVED: not working: error "missing value where TRUE/FALSE needed" because of Inf values when inverting instead of 1's
+
+```
+
+
+### Phylogeny/nest effect non-independence
+Phylogeny is also likely to be a large source of non-independence ie. nestlings from the same nest (remember CF exps w/ great tits by ...). Can be accounted for using nest as random effect in mixed effects model.
+
+### Temporal non-independence
+There may be an effect of sampling date as time of year will have an effect on diet which is likely an important factor. Plotting autocorrelation functions (ACF) are a good way of investigating temporal dependence (used them in MSc in ST3300 i think).
+
+# Explore OTU count data
+
+iNEXT
+For each diversity measure, iNEXT uses the observed sample of abundance or incidence data (called the “reference sample”) to compute diversity estimates and the associated 95% confidence intervals for the following two types of rarefaction and extrapolation (R/E):
+1) Sample‐size‐based R/E sampling curves: iNEXT computes diversity estimates for rarefied and extrapolated samples up to an appropriate size. This type of sampling curve plots the diversity estimates with respect to sample size.
+2) Coverage‐based R/E sampling curves: iNEXT computes diversity estimates for rarefied and extrapolated samples with sample completeness (as measured by sample coverage) up to an appropriate coverage. This type of sampling curve plots the diversity estimates with respect to sample coverage.
+
+iNEXT also plots the above two types of sampling curves and a sample completeness curve. The sample completeness curve provides a bridge between these two types of curves.
+```{r}
+library(iNEXT)
+
+# use unfiltered phylo object
+phylo.spring.no.filter <- readRDS("../Data/phylo-spring-nofilter.rds")
+meta.temp <- meta(phylo.spring.no.filter)
+# remove control samples
+phylo.spring.nofilter.nocontrol <- subset_samples(phylo.spring.no.filter, pass.or.fail!="control")
+
+x <- as.data.frame(phylo.spring.nofilter.nocontrol@otu_table[1:100,1:100])
+x <- as.matrix(t(x)) # make sure to transpose
+
+# create iNEXT object
+# q refers to Hill numbers: species richness (q = 0), Shannon diversity (q = 1) and Simpson diversity (q = 2)
+# seems to calculate for all 3 Hill numbers anyway so im not specifying
+out.inext <- iNEXT(x, datatype = "abundance", nboot=50) # size = NULL, endpoint=NULL, knots=40, se=TRUE, conf=0.95,
+
+# Type: Sample-size-based R/E curve (type=1), sample completeness curve  (type=2), Coverage-based R/E curve (type=3)
+ggiNEXT(out.inext, type=1, se=TRUE) + theme(legend.position="none") +
+  coord_cartesian(xlim=c(0,50000)) # limits axis without dropping observations
+# Solid lines on graph indicate observed/interpolated while dashed lines indicate extrapolated diversity
+
+ggiNEXT(out.inext, type=2, se=TRUE) + theme(legend.position="none") +
+  coord_cartesian(xlim=c(0,10000))
+
+```
+
+Rarefaction curve using vegan. Extra plotting steps from thebottomoftheheap.
+```{r Rarefaction curve, echo=FALSE, eval=FALSE}
+rcurve <- rarecurve(t(otu_table(phylo.spring)), step=50, cex=0.5)
+out <- rcurve
+
+raremax <- min(rowSums(t(otu_table(phylo.spring))))
+
+col <- c("black", "darkred", "forestgreen", "hotpink", "blue")
+lty <- c("solid", "dashed", "dotdash")
+lwd <- c(1, 2)
+pars <- expand.grid(col = col, lty = lty, lwd = lwd, 
+                    stringsAsFactors = FALSE)
+head(pars)
+
+raremax <- min(rowSums(t(otu_table(phylo.spring))))
+
+Nmax <- sapply(out, function(x) max(attr(x, "Subsample")))
+Nmax <- 100000
+Smax <- sapply(out, max)
+
+plot(c(1, max(Nmax)), c(1, max(Smax)), xlab = "Sample Size",
+     ylab = "Species", type = "n") +
+  abline(v = raremax) +
+  for (i in seq_along(out)) {
+    N <- attr(out[[i]], "Subsample")
+    with(pars, lines(N, out[[i]], col = col[i], lty = lty[i], lwd = lwd[i]))
+  }
+```
+
+
+```{r OTU exploration}
+# count number of Archaea
+sum((phylo.spring@tax_table[,1]=="D_0__Archaea")==T) # 45 archaea present
+
+```
+
+```{r Unassigned OTUs}
+unassigned.otus <- c("D_6__uncultured organism","D_6__uncultured bacterium","D_6__","D_5__uncultured","D_5__uncultured organism","D_5__uncultured bacterium","D_5__","D_1__uncultured organism","D_1__uncultured bacterium","D_1__" )
+
+tax_table(phylo.spring) %in% unassigned.otus
+unassigned.species.count <- sum(phylo.spring@tax_table[,"Species"] %in% unassigned.otus)
+unassigned.genus.count <- sum(phylo.spring@tax_table[,"Genus"] %in% unassigned.otus)
+unassigned.otu.count <- sum(phylo.spring@tax_table[,"Phylum"] %in% unassigned.otus)
+
+unassigned.otu.count
+
+sort(phylo.tey@tax_table[,"Genus"])
+
+unique(phylo.spring@tax_table[,"Phylum"])
+
+sum(is.na(phylo.spring@tax_table[,"Phylum"])) # 47 phyla are NA
+sum(phylo.spring@tax_table[,"Phylum"] %in% "D_1__Cyanobacteria") # 527
+
+sum(phylo.spring@tax_table[,"Class"] %in% "D_2__Chloroplast") # 434
+
+
+unique(phylo.spring@tax_table[,"Class"])
+sum(is.na(phylo.spring@tax_table[,"Phylum"]))
+
+phylo.spring #12644 taxa
+
+# remove unassigned phyla and chloroplasts
+phylo.filtered <- subset_taxa(phylo.spring,Class!="D_2__Chloroplast") # 12163, as it removes NAs aswell
+
+
+unique(phylo.filtered@tax_table[,"Class"])
+```
+
+```{r Bokulich filter}
+# taxa total abundance
+taxa.abundances <- get_sample(phylo.spring)
+# dataset total abundance
+total.abundance <- apply(taxa.abundances, 1,sum)
+# combine
+tt.abundances <- cbind(taxa.abundances,total.abundance)
+bokulich.cutoff <- sum(total.abundance)*0.00005
+bokulich.keep <- total.abundance>bokulich.cutoff
+
+#filter
+phylo.bokulich <- prune_taxa(bokulich.keep,phylo.spring) # only 780 taxa left
+```
+
+Knowles removes ASV's with less than 1 copy in at least 5\% of samples for beta-diversity analysis.
+```{r}
+phylo.knowles <- filter_taxa(phylo.filtered, function(x) sum(x > 1) > (0.05*length(x)), TRUE)
+
+####
+ps <- phylo.spring
+phylo.knowles <- filter_taxa(ps, function(x) sum(x > 1) > (0.05*length(x)), TRUE) # 934 taxa left
+# Compute prevalence of each feature, store as data.frame
+prevdf.pk <- apply(X = otu_table(phylo.knowles),
+               MARGIN = ifelse(taxa_are_rows(phylo.knowles), yes = 1, no = 2),
+               FUN = function(x){sum(x > 0)})
+# Add taxonomy and total read counts to this data.frame
+prevdf.pk <- data.frame(Prevalence = prevdf.pk,
+                    TotalAbundance = taxa_sums(phylo.knowles), tax_table(phylo.knowles))
+```
+# Singletons
+```{r}
+ps <- phylo.spring
+head(sort(taxa_sums(ps)),n=1000)
+
+hist(taxa_sums(ps))
+
+hist(tail(sort(taxa_sums(ps)),n=10000))
+
+
+#############
+
+# Compute prevalence of each feature, store as data.frame
+prevdf <- apply(X = otu_table(ps),
+               MARGIN = ifelse(taxa_are_rows(ps), yes = 1, no = 2),
+               FUN = function(x){sum(x > 0)})
+# Add taxonomy and total read counts to this data.frame
+prevdf <- data.frame(Prevalence = prevdf,
+                    TotalAbundance = taxa_sums(ps), tax_table(ps))
+
+#Compute the total and average prevalences of the features in each phylum.
+plyr::ddply(prevdf, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})
+sort(plyr::ddply(prevdf, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})[,3])
+
+# remove NAs , NOT DOING ANYTHING
+# phylo_filt.0.5 <- subset_taxa(phylo_filt.0, !is.na(Phylum) & !Phylum %in% c("", "uncharacterized"))
+
+min(sample_sums(ps))
+
+############
+# ps object after dada2 has about 3000 ASV's w/ zero abundance probably due to removing samples earlier on
+ps.noZero <- prune_taxa(taxa_sums(ps) > 0, ps) # 41685/41685 remain
+ps.noSingletons <- prune_taxa(taxa_sums(ps.noZero) > 1, ps.noZero) # 41197/41685
+
+```
+
+# Hierarchical clustering
+
+Used in Knowles rodent paper. UPGMA algorithm using hclust package. Trees visualised using ape and dendextend. For method, "average" = UPGMA. 
+See: https://www.r-bloggers.com/hierarchical-clustering-in-r-2/.
+```{r}
+phylo.nestlings.TSS <- transform_sample_counts(phylo.nestlings, function(x) x/sum(x))
+BCdist <- phyloseq::distance(phylo.nestlings.TSS, method="bray")
+
+clusters <- hclust(BCdist, method= "average")
+plot(clusters)
+
+# cut at 2 clusters
+clusterCut <- cutree(clusters, 2) # use 2 because there is 2 habitat levels?
+
+table(clusterCut, nestlings.meta$habitat)
+```
+
+# Control samples
+ Some control samples had very high read counts. Are these distinct from bird samples?
+```{r}
+rm(list=ls())
+
+control.samples <- c("G-Neg.S19","PCRnegcon2809186E.S60","DNAnegcontrol-R.S59","PCR-6D-28910.S93")
+
+biom.spring <- import_biom("../Data/Bird_microbiome_Spring/table_tax.biom")
+tree.spring <- read_tree("../Data/Bird_microbiome_Spring/otu.tre")
+biom.spring <- merge_phyloseq(biom.spring, tree.spring)
+
+#Read in metadata. Note 3 samples dropped from phylo.object when sample data merged with phylo.object because of lack of corresponding sample data.
+metadata.raw <- read.csv2("../Data/MasterBirdIDSheet.csv", sep = ",")
+
+#filter out blanks ie. failed samples (not in BIOM file)
+metadata.raw <- metadata.raw[!is.na(metadata.raw$BIOM.ID),] ## why does metadata have 2 less samples than BIOM file
+# set rownames to match biom file ie. sample names
+#rownames(metadata.raw) <- metadata.raw$BIOM.ID
+# add sequence read numbers to samples
+seq_reads <- read.csv("../Data/Bird_microbiome_Spring/seq_reads.csv", header = F)
+# separate column at :
+seq_reads <- separate(seq_reads,1,into = c("BIOM.ID","NumberOfReads"),sep = ":") %>% mutate_at("NumberOfReads", funs(as.numeric(.)))
+# strip white space from sample names
+seq_reads[,"BIOM.ID"] <- str_trim(seq_reads$BIOM.ID)
+metadata.raw <- merge(metadata.raw, seq_reads, by = "BIOM.ID")
+# set rownames to match biom file ie. sample names
+rownames(metadata.raw) <- metadata.raw$BIOM.ID
+
+# merge w/ phylo object
+phylo.metadata <- sample_data(metadata.raw) # labelling as metadata
+rownames(phylo.metadata) <- phylo.metadata$BIOM.ID
+phylo.raw <- merge_phyloseq(phylo.metadata, biom.spring) 
+
+# fix rank names
+colnames(tax_table(phylo.raw)) <- c("Kingdom","Phylum","Class","Order","Family","Genus","Species","rank8","rank9","rank10","rank11","rank12","rank13","rank14","rank15")
+
+# subset table to just include na,med ranks
+tax_table(phylo.raw) <- tax_table(phylo.raw)[,c("Kingdom","Phylum","Class","Order","Family","Genus","Species")]
+
+```
+
+```{r}
+############################## RECALCULATE ALPHA DIVERSITY
+## So, estimate_richness changes the row.names AND orders them differently so they no longer match the BIOM and metadata files, vegan::diversity doesnt do this but 
+# does order them in the same way BUT doesnt have all the diversity indices options i need so im calculating with both functions, cbinding them and dropping the extra shannon diversity
+# recalculate alpha diversity having droppped failures, low read samples and controls
+a.div.phyloseq <- estimate_richness(phylo.raw, split = T, measures = c("Observed", "Chao1", "Shannon", "InvSimpson"))
+## ALSO function converts all rownames to having "." instead of "-" so just cbind but ENSURE ORDER OF SAMPLES IS CORRECT
+a.div.vegan <- diversity(phylo.raw, index=c("shannon"))
+# correct row.names and order
+a.div.correct.rownames <- cbind(a.div.vegan,a.div.phyloseq)
+colnames(a.div.correct.rownames) <- tolower(colnames(a.div.correct.rownames)) # lower colnames so dont have to change upstream scripts
+meta.alpha <- merge(metadata.raw, a.div.correct.rownames[,-1], by = "row.names")
+rownames(meta.alpha) <- meta.alpha$Row.names # fix rownames
+metadata.raw <- meta.alpha[,-1] # drop Row.names column
+
+#metadata.raw.phylo <- sample_data(metadata.raw)
+#biom.spring <- phyloseq(biom.spring, metadata.raw.phylo)
+############################
+
+ggplot(metadata.raw, aes(pass.or.fail, observed)) +
+  geom_boxplot() +
+  ggtitle("Diversity")
+
+ggplot(metadata.raw, aes(SequencePlate, shannon)) +
+  geom_boxplot() +
+  ggtitle("Shannon diversity")
+
+#ggplot(metadata.raw, aes(SequencePlate, shannon, color=pass.or.fail)) +
+ # geom_boxplot() +
+#  ggtitle("Shannon diversity")
+
+```
+
+```{r}
+## Relative abundance
+phylo.glom <-  tax_glom(phylo.raw, "Phylum", NArm = TRUE)  # fast, <2mins
+## transform to relative abundances
+phylo.ra <- transform_sample_counts(phylo.glom, function(x){x / sum(x)})
+
+# special phyloseq psmelt function retuns dataframe w/ otu abundances, taxa names and sample data
+mot <- psmelt(phylo.ra)
+# fix OTU IDs. remove start of string ## subbing empty string for pattern D_0 up to 1__
+mot[,"Phylum"] <- sub("D_1__","",mot[,"Phylum"]) # fixes phyla names
+#mot[,"Genus"] <- sub("D_5__","",mot[,"Genus"]) # fixes Genus names
+mot.filt <- mot[mot$Abundance>=0.1,] #returns table w/ phyla over 10%
+
+# subset
+mot.filt.sub <- subset(mot.filt, pass.or.fail!="pass")
+# stacked barplot of abundances
+ggplot(mot.filt.sub,aes(x=Sample, y=Abundance, fill=Phylum)) +
+  geom_bar(stat = "identity", width = 0.85) +
+  theme(axis.text.x = element_blank(), axis.title.x = element_blank(), axis.ticks.x = element_blank()) +
+  facet_grid(.~pass.or.fail, drop = TRUE, space = "free_x", scales = "free")  #group labels on horizontal axis
+```
+
+```{r}
+phylo.TSS <- transform_sample_counts(phylo.raw, function(x) x/sum(x))
+
+BCdist <- phyloseq::distance(phylo.TSS, method="bray")
+
+ordination.method <- "PCoA"
+#ordination.method <- "NMDS"
+  
+ordBC <- ordinate(phylo.TSS, method = ordination.method, distance = BCdist)
+plot_ordination(phylo.TSS, ordBC, color = "pass.or.fail") + 
+  geom_point() +
+  geom_label_repel(aes(label = ifelse(pass.or.fail=="control",as.character(BIOM.ID),'')),
+                  box.padding   = 0.35, 
+                  point.padding = 0.5,
+                  segment.color = 'grey50')
+  ggtitle(paste(ordination.method,": Bray-Curtis")) 
+  
+```
+
+```{r}
+metadata.raw$date <- as.Date(metadata.raw$date,"%d/%m/%Y")
+
+adonis2(BCdist ~ pass.or.fail + SequencePlate, by="margin", data = metadata.raw, permutations=999)
+
+```
+
+Try to track down what specific genera are present in controls.
+```{r}
+# extract otu table for controls only
+otu.table <- as.data.frame(otu_table(phylo.raw))
+otu.controls <- otu.table[,control.samples]
+
+# calculate totals per OTU
+otu.controls <- cbind(otu.controls, rowSums(otu.controls), taxa_sums(phylo.raw), rowSums(otu.controls)/taxa_sums(phylo.raw)) %>% rename("control.totals" = "rowSums(otu.controls)", "overall.totals"="taxa_sums(phylo.raw)", "Relative.abundance"="rowSums(otu.controls)/taxa_sums(phylo.raw)")
+
+# get OTUs w/ highest abundance
+contaminants <- rownames(otu.controls[otu.controls$totals>1000,])
+
+# extract otu table for major contaminants and see if present in many samples
+otu.table.contaminants <- otu.table[contaminants,]
+
+# add summary columns to otu contaminant table
+contaminants.summary <- cbind(rowSums(otu.table.contaminants), rowMeans(otu.table.contaminants), otu.table.contaminants)  %>% rename("totals" = "rowSums(otu.table.contaminants)", "means"="rowMeans(otu.table.contaminants)")
+
+str(otu.table.contaminants)
+
+# do these contaminants track to a specific plate
+#seq.plate <- phylo.raw@sam_data[,"SequencePlate"]
+seq.plate <- phylo.raw@sam_data$SequencePlate
+seq.plate <- c(as.character(seq.plate))
+otu.table.contaminants <- rbind(seq.plate,otu.table.contaminants)
+rownames(otu.table.contaminants)[1] <- "SequencePlate"
+# get mean not including zero abundance samples
+
+# summarise mean by SequencePlate
+
+trans.cont <- t(otu.table.contaminants)
+```
+
+# ID specific genera
+
+Which genera are most prevalent/abundant. 
+* Are individual genera responsible for driving changes in phyla abundances? 
+* Does tax_glom(,"Genus") amalgamate genera together or species, i think genera is also amalgamated
+
+Split into major phyla dfs
+```{r}
+head(melted)
+
+proteo.melted <- melted[melted$Phylum=="D_1__Proteobacteria",]
+firmi.melted <- melted[melted$Phylum=="D_1__Firmicutes",]
+actino.melted <- melted[melted$Phylum=="D_1__Actinobacteria",]
+teneri.melted <- melted[melted$Phylum=="D_1__Tenericutes",]
+bacteroi.melted <- melted[melted$Phylum=="D_1__Bacteroidetes",]
+```
+
+```{r}
+#phylo.gen.glom <-  tax_glom(phylo.spring, "Genus", NArm = TRUE)
+#melted <- psmelt(phylo.gen.glom)
+#saveRDS(melted, "../Data/melted-genera.rds")
+melted <- readRDS("../Data/melted-genera.rds")
+
+phylo.gen.glom <-  tax_glom(phylo.spring, "Genus", NArm = TRUE)
+############
+phyloseq_rm_na_tax <- function(physeq){
+  # rm_all <- function(x) { Filter(function(x)!all(is.na(x)), df) }
+  rm_all <- function(df) { df[, !apply(is.na(df), 2, all)] }
+  tax_table(physeq) <- rm_all( tax_table(physeq) )
+  return(physeq)
+}
+##########
+phylo.gen.glom <- phyloseq_rm_na_tax(phylo.gen.glom)
+#melted.1 <- psmelt(phylo.gen.glom)
+```
+
+Prevalence of each genera with phylo object collapsed to genus level. Remove chloroplast
+
+```{r}
+# Compute prevalence of each feature, store as data.frame
+prevdf <- apply(X = otu_table(phylo.gen.glom),
+               MARGIN = ifelse(taxa_are_rows(phylo.gen.glom), yes = 1, no = 2),
+               FUN = function(x){sum(x > 0)})
+# Add taxonomy and total read counts to this data.frame
+prevdf <- data.frame(Prevalence = prevdf,
+                    TotalAbundance = taxa_sums(phylo.gen.glom), tax_table(phylo.gen.glom))
+
+#Compute the total and average prevalences of the features in each phylum.
+plyr::ddply(prevdf, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})
+#sort(plyr::ddply(prevdf, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})[,3])
+
+prevdf <- prevdf[!prevdf$Class=="D_2__Chloroplast",]
+
+#saveRDS(prevdf, "../Data/prevdf-genus.rds") # saved as it took so long to make
+```
+
+Compute prevalence of each species. 
+
+```{r}
+# Compute prevalence of each feature, store as data.frame
+prevdf.sp <- apply(X = otu_table(phylo.spring),
+               MARGIN = ifelse(taxa_are_rows(phylo.spring), yes = 1, no = 2),
+               FUN = function(x){sum(x > 0)})
+# Add taxonomy and total read counts to this data.frame
+prevdf.sp <- data.frame(Prevalence = prevdf.sp,
+                    TotalAbundance = taxa_sums(phylo.spring), tax_table(phylo.spring))
+
+#Compute the total and average prevalences of the features in each phylum.
+plyr::ddply(prevdf.sp, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})
+#sort(plyr::ddply(prevdf.sp, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})[,3])
+
+prevdf.sp <- prevdf.sp[!prevdf.sp$Class=="D_2__Chloroplast",]
+
+#save(prevdf, prevdf.sp, phylo.gen.glom, otu.lookup, file = "../Data/prevdf-sp-genus.rda") # saved as it took so long to make
+load("../Data/prevdf-sp-genus.rda")
+```
+
+```{r}
+otu.lookup <- as(phylo.spring@tax_table, "matrix")
+otu.lookup <- as.data.frame(otu.lookup)
+```
+```{r}
+phyla.sums <- plyr::ddply(prevdf, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$TotalAbundance))})
+```

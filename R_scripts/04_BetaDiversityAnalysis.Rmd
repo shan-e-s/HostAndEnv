@@ -1,0 +1,219 @@
+---
+title: "Host and Environmental drivers of microbiome: Beta diversity"
+output: html_notebook
+---
+
+This script carries out the beta diversity analyses (community composition and structure) for the 2016 Cork great tit microbiome data.
+
+# Set-up and libraries
+
+```{r Housekeeping, echo=FALSE}
+rm(list=ls())
+#set.seed(10)
+```
+
+
+```{r Set-up, message=FALSE, echo=FALSE}
+# libraries
+#install.packages("tidyverse", dependencies = T)
+library(vegan)  ##note had trouble installing, needed to install gfortran first
+library(Rmisc)
+library(tidyverse) #
+library(phyloseq) 
+library(microbiome)
+library(gridExtra)
+library(ggpubr)
+library(lmerTest) # NOTE: overloads lme4 and extends test to provide p-values AND therefore causes DHARMa to give a warning but doesnt appear to effect it
+library(DHARMa)
+library(kableExtra)
+library(effects)
+library(emmeans)
+```
+
+```{r Read in data, warning=FALSE, echo=FALSE}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+
+phylo.spring
+```
+
+# Data cleaning
+
+```{r Data splits, echo=FALSE}
+# relevel ageBinned factor
+metadata$ageBinned <- relevel(metadata$ageBinned, "1week")
+
+# relevel habitat
+metadata$habitat <- relevel(metadata$habitat, "deciduous")
+
+# Split data into adult and nestlings. Use ageBinned("1week","2week","adult").
+# subset to nestlings
+## alt use meta() to extract metadata as df
+# phylo.nestlings <- subset_samples(phylo.spring, ageBinned=="1week"|ageBinned=="2week")
+# nestlings.meta <- meta(phylo.nestlings@sam_data)
+# 
+# # subset to adults
+phylo.adults <- subset_samples(phylo.spring, ageBinned=="adult")
+adults.meta <- meta(phylo.adults@sam_data)
+
+# relevel habitat
+adults.meta$habitat <- relevel(adults.meta$habitat, "deciduous")
+```
+
+```{r}
+numeric.predictors <- c("QubitDNA","Tarsus","Weight", "wing", "broodSizeWhenSampled", "broodSizeMax", "totalFledge", "clutchSize", "layDateFirst", "numberDeadPreRinged", "numberDeadPostRinged","scaled.mass","scaled.mass.wing.adult", "scaled.mass.tarsus.adult","scaled.mass.chick", "scaled.mass.tarsus", "scaled.mass.wing", "DistanceToEdge")
+
+# centre and scale numeric variables ie. subtract mean and divide by st. deviation
+metadata.scaled <- metadata
+metadata.scaled[,numeric.predictors] <- scale(metadata.scaled[,numeric.predictors])
+
+adults.meta.scaled <- adults.meta
+adults.meta.scaled[,numeric.predictors] <- scale(adults.meta.scaled[,numeric.predictors])
+```
+
+# Beta diversity
+
+## All birds: Age, habitat OR site
+
+Filter out low prevalence taxa
+* Knowles does this in order to remove possible contaminants and sequencing artefacts.
+* Taxa w/ less than 1 copy in at least 5% of samples removed.
+* 913/55000 taxa remain
+
+```{r}
+phylo.knowles <- filter_taxa(phylo.spring, function(x) sum(x > 1) > (0.05*length(x)), TRUE)
+
+phylo.TSS <- transform_sample_counts(phylo.knowles, function(x) x/sum(x)) # normalise read counts w/ Total-Sum Scaling
+
+BCdist <- phyloseq::distance(phylo.TSS, method="bray")
+JDdist <- phyloseq::distance(phylo.TSS, method="jaccard") # requires "binary = TRUE"? see help page
+```
+
+### Check dispersion
+
+* Non-homogenous dispersions: "layDateFirst", "broodSizeWhenSampled", "DistanceToEdge", "site", "nest", "SequencePlate"
+* Homogenous dispersions: ageBinned, habitat
+```{r Test dispersion assumption, results='hide', warning=FALSE}
+## H0= No difference in dispersion between groups
+# calc dispersion, using distance measure
+
+variables <- c("ageBinned", "habitat","layDateFirst","broodSizeWhenSampled","DistanceToEdge","site","nest","SequencePlate")
+
+for(i in variables){ # works
+  dispersion <- betadisper(BCdist, metadata[,i])
+  print(i) # print variable being tested
+  print(permutest(dispersion, pairwise=FALSE, permutations=1000))
+  cat("\n") # print line break, makes it easier to read
+}
+
+```
+
+### Modelling: Bray-Curtis + Jaccard?
+
+* what strata to use? Nest and include Sequence as fixed effect
+* could include interactions? 
+  * but considering im using margin maybe avoid interactions in formula?
+* include variables w/ non-homogenous dispersions? *For now, no. Except for SequencePlate*
+```{r}
+
+all.adonis.bc <- adonis2(BCdist ~ ageBinned + habitat + SequencePlate, strata= nest, by="margin", data = metadata, permutations = 999) # all sig
+#all.adonis.bc <- adonis2(BCdist ~ ageBinned*habitat + SequencePlate, strata= nest, by="margin", data = metadata, permutations = 999) # all sig
+all.adonis.bc
+
+#adonis2(JDdist ~ ageBinned + habitat + SequencePlate, strata= nest, by="margin", data = metadata, permutations = 999) # all sig
+
+```
+
+```{r}
+# ageBinned * habitat * layDateFirst + ageBinned * broodSizeWhenSampled +  (1|site/nest/bird.ID) + (1|SequencePlate)
+# 
+all.adonis.bc <- adonis2(BCdist ~ ageBinned * habitat + ageBinned*layDateFirst + ageBinned * broodSizeWhenSampled + SequencePlate, strata= nest, by="margin", data = metadata, permutations = 999) #
+all.adonis.bc
+```
+
+PCoA: Probable convergence failure if i try to colour by age and use ellipse based on habitat
+NMDS: high stress
+```{r}
+ordination.method <- "PCoA"
+#ordination.method <- "NMDS"
+ordBC <- ordinate(phylo.TSS, method = ordination.method, distance = BCdist, k=3)
+
+plot_ordination(phylo.TSS, ordBC, color = "habitat", shape = "ageBinned") + 
+  geom_point(size=3) + 
+  ggtitle("PCoA: BC") + stat_ellipse(geom = "polygon", type="t", alpha=0.1, aes(fill=habitat))+ 
+  theme_bw()+  theme(panel.grid.major = element_blank(),
+                      panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"), 
+                      panel.border = element_rect(linetype = "solid", colour = "black", size=.8)) +
+                      theme(text=element_text(size=14,  family="serif"), axis.ticks = element_line(colour = "black", size = .7))+
+                      geom_point()
+```
+
+```{r}
+#
+
+vec1 <- sample_data(phylo.TSS)$ageBinned
+levels(vec1) <- c("Day-8", "Day-15", "Adult")
+replace(vec1, vec1=="1week", "Day-8")
+replace(vec1, vec1=="2week", "Day-15")
+replace(vec1, vec1=="adult", "Adult")
+
+sample_data(phylo.TSS)$ageBinned <-vec1
+
+pord1 <- plot_ordination(phylo.TSS, ordBC, color = "ageBinned", shape = "habitat") + 
+  geom_point(size=3) + 
+  ggtitle("PCoA: Bray-Curtis") +
+  theme_bw() +  
+  theme(panel.grid.major = element_blank(),
+                      panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"), 
+                      panel.border = element_rect(linetype = "solid", colour = "black", size=.8)) +
+                      theme(text=element_text(size=14,  family="serif"), axis.ticks = element_line(colour = "black", size = .7))+
+                      geom_point()
+
+# fgix labels
+pord1[["labels"]][["colour"]] <- "Age"
+pord1[["labels"]][["shape"]] <- "Habitat"
+
+pord1
+```
+
+# Adult birds
+
+```{r}
+phylo.kn.adult <- filter_taxa(phylo.adults, function(x) sum(x > 1) > (0.05*length(x)), TRUE)
+
+phylo.TSS <- transform_sample_counts(phylo.kn.adult, function(x) x/sum(x))
+
+BCdist <- phyloseq::distance(phylo.TSS, method="bray")
+JDdist <- phyloseq::distance(phylo.TSS, method="jaccard")
+```
+
+## Check dispersion
+
+Homogenous dispersion: sex, habitat, distance is almost non-homo
+Non-homogenous: ageDays, ...all others
+```{r, results='hide', warning=FALSE}
+## H0= No difference in dispersion between groups
+# calc dispersion, using distance measure
+
+variables <- c("ageDays", "Sex", "habitat", "layDateFirst", "broodSizeWhenSampled", "DistanceToEdge", "site", "nest", "SequencePlate")
+
+for(i in variables){ # works
+  dispersion <- betadisper(BCdist, adults.meta[,i])
+  print(i) # print variable being tested
+  print(permutest(dispersion, pairwise=FALSE, permutations=1000))
+  cat("\n") # print line break, makes it easier to read
+}
+
+```
+### Modelling: Bray-curtis
+
+Not including non-homogenous variables, for now
+```{r}
+adult.adonis.bc <- adonis2(BCdist ~ Sex + habitat + SequencePlate, strata = nest, by = "margin", data = adults.meta, permutations = 999)
+adult.adonis.bc
+
+#adonis2(JDdist ~ Sex + habitat + ageDays, strata = nest,by = "margin", data = adults.meta, permutations = 999) 
+```
+
+
+

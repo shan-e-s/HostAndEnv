@@ -1,0 +1,260 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+Model selection on a diversity using the IT-AIC method.
+
+1/4/21
+* Variables of interest are habitat and age
+* Also interested in Distance to edge
+* Lay date, brood size are included as fixed effects. Interested in these or nuisance variables?
+* GD's suggestion following presentation to Oxford (Ben Sheldon): make matrix of nest distances. But how to include in model as 1D factor?
+
+
+# check is BroodSize and laydate colinear
+Osheas found broodSize and layDate were correlated so might cause parameter estimates to be affected in model
+
+Make correlation matrix
+* what to do about categorical variables?
+```{r}
+mydata <- metadata[,c("layDateFirst","broodSizeWhenSampled","DistanceToEdge")] #"ageBinned","habitat",
+cor(mydata)
+```
+
+
+# all birds shannon
+
+```{r}
+my.backward.diff = matrix(c(-2/3, 1/3, 1/3, -1/3, -1/3, 2/3), ncol = 2)
+my.backward.diff
+```
+
+Adding this contrast makes no difference to AIC
+```{r}
+levels(metadata.scaled$ageBinned) # verify: 1week,2week,adult
+#assigning the backward difference coding to ageBinned
+contrasts(metadata.scaled$ageBinned) = my.backward.diff
+```
+
+2/4/21 
+* changing full model slightly: adding age*broodSize interaction as as chicks age more sibs likely to be more stressful
+* also adding habitat*distance interaction 
+```{r}
+#metadata.scaled$habitat <- relevel(metadata.scaled$habitat, "conifer")
+
+all.sh.lmm <- lmer(log(shannon) ~ ageBinned * habitat * layDateFirst + ageBinned * broodSizeWhenSampled + habitat*DistanceToEdge + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata.scaled, REML = F)
+summary(all.sh.lmm)
+```
+ 
+Calculate VIF
+```{r}
+car::vif(all.sh.lmm)
+```
+
+# model selection
+
+Dropped laydate interaction term, as interaction is non-significant and 3 way interaction uses alot of DoF
+* AIC decreased by 7.3
+```{r}
+#metadata.scaled$habitat <- relevel(metadata.scaled$habitat, "conifer")
+
+all.sh.lmm <- lmer(log(shannon) ~ ageBinned * habitat + layDateFirst + ageBinned * broodSizeWhenSampled + habitat*DistanceToEdge +  (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata.scaled, REML = F)
+summary(all.sh.lmm)
+```
+
+Dropped age*broodsize interaction, as non significant. 
+* AIC dropped by 2.5
+*final all birds shannon model*
+```{r}
+#metadata.scaled$habitat <- relevel(metadata.scaled$habitat, "conifer")
+
+all.sh.lmm <- lmer(log(shannon) ~ ageBinned * habitat + layDateFirst + broodSizeWhenSampled + habitat*DistanceToEdge +  (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata.scaled, REML = F)
+summary(all.sh.lmm)
+```
+
+Dropping habitat * Distance interaction
+* AIC increases slightly (0.4) so keep interaction
+```{r}
+#metadata.scaled$habitat <- relevel(metadata.scaled$habitat, "conifer")
+
+all.sh.lmm <- lmer(log(shannon) ~ ageBinned * habitat + layDateFirst + broodSizeWhenSampled + DistanceToEdge +  (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata.scaled, REML = F)
+summary(all.sh.lmm)
+```
+
+Dropped broodSize as least significant fixed effect
+* AIC decreases by 2.2
+* does this make sense to drop non-significant variables?
+* subsequently dropping layDate decreases AIC by 0.9
+```{r}
+#metadata.scaled$habitat <- relevel(metadata.scaled$habitat, "conifer")
+
+all.sh.lmm <- lmer(log(shannon) ~ ageBinned * habitat + layDateFirst + habitat*DistanceToEdge +  (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata.scaled, REML = F)
+summary(all.sh.lmm)
+```
+
+# All birds chao
+
+```{r}
+all.chao.lmm <- lmer(log(chao1) ~ ageBinned * habitat * layDateFirst + ageBinned * broodSizeWhenSampled + habitat*DistanceToEdge + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata.scaled, REML=F)
+summary(all.chao.lmm)
+```
+
+Dropping laydate interaction
+* AIC decreases by ~8
+*final all birds chao model* 
+```{r}
+all.chao.lmm <- lmer(log(chao1) ~ ageBinned * habitat + layDateFirst + ageBinned * broodSizeWhenSampled + habitat*DistanceToEdge  + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata.scaled, REML=F)
+summary(all.chao.lmm)
+```
+
+Dropping interaction between distance and habitat as least significant interaction
+* AIC decreases by 1.6
+* so keep interaction for now
+```{r}
+all.chao.lmm <- lmer(log(chao1) ~ ageBinned * habitat + layDateFirst + ageBinned * broodSizeWhenSampled + DistanceToEdge  + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata.scaled, REML=F)
+summary(all.chao.lmm)
+```
+
+
+Dropping age interaction with brood size
+* AIC decreases by 1.6
+* so keep interaction
+```{r}
+all.chao.lmm <- lmer(log(chao1) ~ ageBinned * habitat + layDateFirst + broodSizeWhenSampled + habitat*DistanceToEdge  + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata.scaled, REML=F)
+summary(all.chao.lmm)
+```
+
+Dropping age interaction with brood size AND habitat interaction with Distance.
+* Can I do this? Drop 2 interaction terms at once? Probably need to set larger cut-off point if so, like 4 instead of deltaAIC=2
+* AIC decreases by 3.1
+```{r}
+all.chao.lmm <- lmer(log(chao1) ~ ageBinned * habitat + layDateFirst + broodSizeWhenSampled + DistanceToEdge + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata.scaled, REML=F)
+summary(all.chao.lmm)
+```
+
+# Model selection for adult shannon
+*Come back to this*
+Adult full model
+* singular. Site has 0 variance
+* convergence code 0 but that isnt problematic i dont think
+* drop lay date as likely convergent with brood size (see OShea paper)?
+```{r Adult shannon model-maximal, results='hide'}
+#adults.meta.scaled$habitat <- relevel(adults.meta.scaled$habitat, "deciduous")
+# adults.meta.scaled$Sex <- relevel(adults.meta.scaled$Sex, "Fe")
+
+ad.sh.lmm <- lmer((shannon)^(1/3) ~ Sex * habitat * broodSizeWhenSampled + Sex * habitat * layDateFirst + habitat * DistanceToEdge + (1|site/nest) + (1|SequencePlate), data = adults.meta.scaled, REML = F)
+
+summary(ad.sh.lmm)
+```
+
+Drop site random term as causing singular warning 
+* AIC drops by 2
+```{r, results='hide'}
+#adults.meta.scaled$habitat <- relevel(adults.meta.scaled$habitat, "deciduous")
+# adults.meta.scaled$Sex <- relevel(adults.meta.scaled$Sex, "Fe")
+
+ad.sh.lmm <- lmer((shannon)^(1/3) ~ Sex * habitat * broodSizeWhenSampled + Sex * habitat * layDateFirst + habitat * DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.meta.scaled, REML = F)
+
+summary(ad.sh.lmm)
+```
+
+Drop habitat distance interaction as non-significant
+* AIC decreases by 1.8
+* reject change
+```{r , results='hide'}
+#adults.meta.scaled$habitat <- relevel(adults.meta.scaled$habitat, "deciduous")
+# adults.meta.scaled$Sex <- relevel(adults.meta.scaled$Sex, "Fe")
+
+ad.sh.lmm <- lmer((shannon)^(1/3) ~ Sex * habitat * broodSizeWhenSampled + Sex * habitat * layDateFirst +  DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.meta.scaled, REML = F)
+
+summary(ad.sh.lmm)
+```
+
+Drop lay date interaction as non-significant (though close to significance)
+* AIC drops by 1.6
+* interestingly everything becomes non-significant
+```{r, results='hide'}
+#adults.meta.scaled$habitat <- relevel(adults.meta.scaled$habitat, "deciduous")
+# adults.meta.scaled$Sex <- relevel(adults.meta.scaled$Sex, "Fe")
+
+ad.sh.lmm <- lmer((shannon)^(1/3) ~ Sex * habitat * broodSizeWhenSampled + layDateFirst +  DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.meta.scaled, REML = F)
+
+summary(ad.sh.lmm)
+```
+
+```{r}
+#adults.meta.scaled$habitat <- relevel(adults.meta.scaled$habitat, "deciduous")
+# adults.meta.scaled$Sex <- relevel(adults.meta.scaled$Sex, "Fe")
+
+ad.sh.lmm <- lmer((shannon)^(1/3) ~ Sex * broodSizeWhenSampled + habitat + layDateFirst +  DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.meta.scaled, REML = F)
+
+summary(ad.sh.lmm)
+```
+
+```{r, results='hide'}
+#adults.meta.scaled$habitat <- relevel(adults.meta.scaled$habitat, "deciduous")
+# adults.meta.scaled$Sex <- relevel(adults.meta.scaled$Sex, "Fe")
+
+ad.sh.lmm <- lmer((shannon)^(1/3) ~ Sex + broodSizeWhenSampled + habitat + layDateFirst +  DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.meta.scaled, REML = F)
+
+summary(ad.sh.lmm)
+```
+
+# Model selection for adult chao
+```{r}
+#adults.meta.scaled$habitat <- relevel(adults.meta.scaled$habitat, "deciduous")
+# adults.meta.scaled$Sex <- relevel(adults.meta.scaled$Sex, "Fe")
+
+ad.sh.lmm <- lmer(log(chao1) ~ Sex * habitat * broodSizeWhenSampled + Sex * habitat * layDateFirst + habitat * DistanceToEdge + (1|site/nest) + (1|SequencePlate), data = adults.meta.scaled, REML = F)
+
+summary(ad.sh.lmm)
+```
+
+Site gives singular site. Drop site
+```{r}
+#adults.meta.scaled$habitat <- relevel(adults.meta.scaled$habitat, "deciduous")
+# adults.meta.scaled$Sex <- relevel(adults.meta.scaled$Sex, "Fe")
+
+ad.sh.lmm <- lmer(log(chao1) ~ Sex * habitat * broodSizeWhenSampled + Sex * habitat * layDateFirst + habitat * DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.meta.scaled, REML = F)
+
+summary(ad.sh.lmm)
+```
+
+Drop sex*habitat interaction with broodSize
+* AIC decreases by 3.4
+```{r}
+ad.sh.lmm <- lmer(log(chao1) ~ Sex * habitat + broodSizeWhenSampled + Sex * habitat * layDateFirst + habitat * DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.meta.scaled, REML = F)
+
+summary(ad.sh.lmm)
+```
+
+Drop sex*habitat interaction with laydate
+* note dropping two terms so AIC limit will be 4 not 2
+* AIC drops by 4.3
+*final model*
+```{r}
+ad.sh.lmm <- lmer(log(chao1) ~ Sex * habitat + broodSizeWhenSampled + layDateFirst + habitat * DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.meta.scaled, REML = F)
+
+summary(ad.sh.lmm)
+```
+
+Drop habitat interaction with Distance
+* AIC decreases by <2
+```{r}
+ad.sh.lmm <- lmer(log(chao1) ~ Sex * habitat + broodSizeWhenSampled + layDateFirst + DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.meta.scaled, REML = F)
+
+summary(ad.sh.lmm)
+```
+Drop sex *habitat interaction
+* Is habitat term extraneous here? As interaciton with distance will alos call for habitat as fixed effect?
+* AIC decreases by only 1
+```{r}
+ad.sh.lmm <- lmer(log(chao1) ~ Sex + habitat + broodSizeWhenSampled + layDateFirst + habitat * DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.meta.scaled, REML = F)
+
+summary(ad.sh.lmm)
+```
+
+
+
+
+
