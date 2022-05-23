@@ -1,0 +1,117 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Model averaging of alpha diversity of nestlings only to find the significant terms for the repeatability analysis.
+
+```{r}
+#install.packages("arm")
+
+library(MuMIn)
+library(arm)
+library(microbiome)
+library(tidyverse)
+library(kableExtra)
+library(phyloseq)
+```
+
+# Read in data
+```{r Read in data, warning=FALSE, echo=FALSE}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+
+# relevel habitat
+#metadata$habitat <- relevel(metadata$habitat, "deciduous") # no difference in results if habitat releveled other than coefficient signs change (direction of effect)
+```
+
+
+Make adults metadata
+```{r}
+# # subset to adults
+phylo.nestlings <- subset_samples(phylo.spring, ageBinned!="adult")
+nestling.metadata <- meta(phylo.nestlings@sam_data)
+
+# relevel habitat
+#adults.metadata$Sex <- relevel(adults.metadata$Sex, "M") # no difference in results if habitat or sex releveled
+```
+
+```{r}
+#metadata.scaled$habitat <- relevel(metadata.scaled$habitat, "conifer")
+
+all.sh.lmm <- lmer(log(shannon) ~ ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + layDateFirst*habitat+ broodSizeWhenSampled*habitat + DistanceToEdge*habitat + broodSizeWhenSampled*DistanceToEdge + DistanceToEdge*layDateFirst + (1|site/nest/bird.ID) + (1|SequencePlate), data = nestling.metadata, REML = TRUE)
+
+summary(all.sh.lmm)
+```
+
+```{r}
+stdz.model <- standardize(all.sh.lmm, standardize.y = FALSE)#, unchanged = "habitat")#, binary.inputs = "full")#
+summary(stdz.model)
+```
+
+```{r}
+# change na. action
+options(na.action = "na.fail") # required for dredge to run for some reason
+
+getAllTerms(stdz.model) 
+
+model.set <- dredge(stdz.model, rank="AICc", REML = FALSE)
+
+options(na.action = "na.omit") # set back to default
+
+```
+
+Extract top models and refit using REML
+```{r}
+top.models <- get.models(model.set, subset = delta<2, REML = TRUE)
+```
+
+## Model averaging: shannon all birds
+
+"Note there are two sets of estimates: the “full” coefficients set terms to 0 if they are not included in the model while averaging, whereas the “conditional” coefficients ignores the predictors entirely. The “full” coefficients are thus more conservative and it is best practice to interpret these. "-uoftcoders
+```{r}
+model.avg1 <- model.avg(top.models)
+
+summary(model.avg1)
+```
+
+# Chao
+
+```{r}
+#metadata.scaled$habitat <- relevel(metadata.scaled$habitat, "conifer")
+
+all.chao.lmm <- lmer(log(chao1) ~ ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + layDateFirst*habitat+ broodSizeWhenSampled*habitat + DistanceToEdge*habitat + broodSizeWhenSampled*DistanceToEdge + DistanceToEdge*layDateFirst + (1|site/nest/bird.ID) + (1|SequencePlate), data = nestling.metadata, REML = TRUE)
+
+summary(all.chao.lmm)
+```
+
+```{r}
+stdz.model <- standardize(all.chao.lmm, standardize.y = FALSE)#, unchanged = "habitat")#, binary.inputs = "full")#
+summary(stdz.model)
+```
+
+```{r}
+# change na. action
+options(na.action = "na.fail") # required for dredge to run for some reason
+
+getAllTerms(stdz.model) 
+
+model.set <- dredge(stdz.model, rank="AICc", REML = FALSE)
+
+options(na.action = "na.omit") # set back to default
+
+```
+
+Extract top models and refit using REML
+```{r}
+top.models <- get.models(model.set, subset = delta<2, REML = TRUE)
+```
+
+## Model averaging: shannon all birds
+
+"Note there are two sets of estimates: the “full” coefficients set terms to 0 if they are not included in the model while averaging, whereas the “conditional” coefficients ignores the predictors entirely. The “full” coefficients are thus more conservative and it is best practice to interpret these. "-uoftcoders
+```{r}
+model.avg2 <- model.avg(top.models)
+
+summary(model.avg1)
+```
