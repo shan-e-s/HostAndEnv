@@ -1,0 +1,162 @@
+---
+title: "Differential abundance for Host and Env drivers, CoDa sensitive"
+output: html_notebook
+---
+
+See alpha diversity analyses in "HostAndEnvironmnetalDrivers_BDC.Rmd".
+
+The following uses the Aldex2 package: https://bioconductor.org/packages/release/bioc/vignettes/ALDEx2/inst/doc/ALDEx2_vignette.pdf
+
+"ALDEx2 measures differential (relative) abundance as calculated by an expected p-value, an expected Benjaminin- Hochberg adjusted p-value and as an expected stan- dardized effect size (Fernandes et al., 2014, Gloor et al. (2016a)). The latter is a much more robust estimate, and should be used whenever possible since a standardized effect size is a much more reproducible metric of ‘significance’ than is a p-value (Halsey et al., 2015)."- Gloor (2017) supp. info
+
+```{r Housekeeping, echo=FALSE}
+rm(list=ls())
+#set.seed(10)
+```
+
+Install up-to-date aldex
+```{r}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("ALDEx2")
+```
+
+# Libraries
+```{r}
+library(vegan)  ##note had trouble installing, needed to install gfortran first
+library(Rmisc)
+library(tidyverse) #
+library(phyloseq) 
+library(microbiome)
+library(ALDEx2)
+```
+
+# read in data
+
+```{r Read in data, warning=FALSE, echo=FALSE}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+
+phylo.spring
+```
+
+# Filtering
+I should perform some filtering step to make the analysis more reasonable. Bokulich filter (0.05% prevalence)? Check Glor healthy chinese paper.
+* Gloor: "The OTUs occurring in each sample were tabulated, with singleton OTUs and those rarer than 0.1% in any sample excluded".
+
+Bokulich: remove OTUs with less than 1 copy in at least 5% of samples
+```{r}
+phylo.bokulich <- filter_taxa(phylo.spring, function(x) sum(x > 1) > (0.01*length(x)), TRUE)
+
+```
+
+
+# Analysis
+
+Need count table and vector of groups in same order as samples in count table
+* where taxa are rows and samples are columns
+* must transpose otu table
+```{r}
+# count table
+ps.counts <- t(as(otu_table(phylo.bokulich), "matrix"))
+#ps.counts <- ps.counts[1:100,1:10]
+
+# grouping vector
+group.order <- cbind(as.character(metadata$BIOM.ID),as.character(metadata$habitat))
+conds <- metadata$habitat
+```
+
+Verify grouping vector is in same order as count table columns
+```{r}
+#check.order <- cbind(colnames(ps.counts), group.order)
+```
+
+# 
+```{r}
+x.all <- aldex(ps.counts, conds, mc.samples=16, test="t", effect=TRUE,
+include.sample.summary=FALSE, denom="all", verbose=FALSE)
+```
+
+```{r}
+aldex.plot(x.all, type="MA", test="welch", xlab="Log-ratio abundance", ylab="Difference")
+
+aldex.plot(x.all, type="MW", test="welch", xlab="Dispersion", ylab="Difference")
+```
+
+# clr
+
+The following uses the modular approach. Could run altogether as in above?
+```{r}
+x <- aldex.clr(ps.counts, conds, mc.samples=16, denom="all", verbose=F)
+```
+
+```{r}
+x.tt <- aldex.ttest(x, paired.test=FALSE, verbose=FALSE)
+```
+
+aldex effect module
+```{r}
+x.effect <- aldex.effect(x, verbose=FALSE)
+```
+
+# plot
+
+"We use effect plots for display purposes because they show the relationship between difference and dispersion (Gloor et al., 2016a) which are the constituents of p- values, but are not scaled by the number of samples. We can see in Figure 10 that the majority of OTUs in the HMP dataset have much more dispersion (within group variation, analogous to the standard deviation) than they do between group difference. In fact, the majority of OTUs have a dispersion value greater than 23 = 8 but less than 4-fold different relative abundance between groups. Clearly, even a low p-value is meaningless in this situation. The OTUs with greater difference than dispersion are indicated by the red points in the plot.......
+
+... The effect plot shows a scatter plot of the difference between the relative abundance of OTUs in groups 1 and 2 plotted vs. the maximum dispersion of the OTU in either group: each point is an individual OTU. We can see that the dispersion for most OTUs is much greater than the difference between groups, essentially indicating that the variation within each group is larger than the difference between groups. Points are colored in blue if the expected Benjamini-Hochberg false discovery rate (FDR) value is less than 0.05, and circled in red if the absolute expected standardized effect size is ≥ 1."- Gloor(2017) supps
+
+The first plot is an Bland-Altman or MA plot that shows the relationship between abundance and Difference. 
+The second plot is an effect plot that shows the relationship between Difference and Dispersion.
+```{r}
+x.all <- data.frame(x.tt,x.effect)
+
+aldex.plot(x.all, type="MA", test="welch")
+aldex.plot(x.all, type="MW", test="welch")
+```
+
+Useful to have plot of standardized effect size vs p-value to illustrate Gloors point above?
+* see Gloor supp + code
+```{r}
+
+```
+
+# aldex.glm for complex study design
+Use this method for habitat*age interaction?
+
+Wrong, vignette sets A as random and B as real values
+```{r}
+covariates <- data.frame("A" = metadata$ageBinned,
+"B" = metadata$habitat)
+
+mm <- model.matrix(~ A + B, covariates)
+x <- aldex.clr(ps.counts, mm, mc.samples=8, denom="all")
+
+glm.test <- aldex.glm(x, mm)
+```
+
+Not sure how below works exactly
+* need to specify each factor level and plot?
+```{r}
+plot(glm.test[,"model.A2week Pr(>|t|).BH"], x.all$we.eBH, log="xy",
+xlab="glm model A", ylab="Welch's t-test")
+
+plot(glm.test[,"model.B Pr(>|t|).BH"], x.all$we.eBH, log="xy",
+xlab="glm model A", ylab="Welch's t-test")
+```
+
+# Asymmetry
+Aldex will give false positives and negatives if data is asymmetric. eg if one group is largely composed of features absent in the other group.
+
+"Asymmetry generally shows as a the centre of mass of the histogram for the x.all$diff.btw or
+x.all$effect being not centred around zero"- aldex2 vignette
+```{r}
+# check for asymmetry
+```
+
+Address asymmetry
+* there are different methdos to deal with asymmetry depending on the severity of the asymmetry. See section 7.1 of vignette
+```{r}
+
+```
+

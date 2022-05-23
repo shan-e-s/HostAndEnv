@@ -1,0 +1,321 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Calculate repeatability
+* see GD email form July 2019
+
+See
+* https://www.sciencedirect.com/science/article/pii/S0003347221000786 linked by Camille
+* https://tomhouslay.files.wordpress.com/2017/02/indivvar_mv_tutorial_asreml.pdf linked by gabrielle
+
+Updating this anlaysis on 14/1/2022 following meeting with JQ and GD
+* 4 models: bird ID only, significant terms + bird ID, significant  + bird ID random effect + nest random effect, significant terms + bird ID random effect + nest random effect + site random effect
+* where significant terms refer to terms in model averaged results which were significant
+* include singletons (i.e. indivduals which were only measured once)
+* only nestlings (i think though maybe different variables would be significant if analysis performed on only nestlings dataset)
+* ran separate nestling only alpha diversity averaged models to find significant terms 
+
+Update 20/2/2022
+* recalculate repeatibility in models with extra random terms so :Random term variance / (divided by)
+Sum of all random terms in the model (including residual). Following GD email 19/7/2019
+
+# Modelling: Repeatability
+
+Can i calculate for individual and for nest?
+
+*Copied from old script (in GTM_phd dir) on 3 Sept 2021, must update*
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+
+```
+
+# Create nestling dataset
+```{r}
+phylo.nestling <- subset_samples(phylo.spring, ageBinned!="adult")
+nestling.metadata <- meta(phylo.nestling@sam_data)
+
+```
+
+# Shannon
+## Bird ID only
+
+Calculating repeatability of alpha diversity for paired samples. See GD email for methods or Paired_Repeatability.R script. Camille said two ways to start, w/ fixed effects is adjusted repeatability and w/o fixed effect is just repeatability?
+
+* Repeatability = 0.3780495, repeatability.lower = 5.603207e-08, repeatability.upper = 0.4231754
+* Camille says i can get a p-value by performing an anova on the lm and an lm w/o the random effect HOWEVER i cant perform a lmer() w/o specifying a random effect and i cant perform anova on a lmer and a lm it seems.
+```{r}
+#lm.null <- lmer(log(shannon) ~ 1, data = nestling.metadata)
+lm <- lmer(log(shannon) ~ (1|bird.ID), data = nestling.metadata)
+summary(lm)
+#anova(lm.null, lm)
+###########
+# calculate repeatabilty estimate
+VarCorr(lm)
+
+# repeatability = Std.Dev of intercept / (Std.Dev of intercept + Std.Dev. of Residual)
+# repeatability = w/i individual variation / w/i individual + between individual variation
+repeatability <- 0.35951/(0.35951+0.59145)
+
+##########
+# calculate confidence intervals w/ 2 possible methods
+
+# Method 1: bootstrapping approach
+#confint function calculates 95% confidence interval around model estimates
+#confint(lm,method="boot",oldNames=FALSE,nsim=1000)
+#sd_(Intercept)|indiv = stdev of intercept for 95%CI
+#sigma = stdev model residual error
+
+repeatability.lower <- 0.00000002734161/(0.00000002734161 + 0.4879636) # 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+repeatability.upper <- 0.5095417/(0.5095417 + 0.6945494) # 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+paste("Unadjusted Repeatability=", round(repeatability, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+
+```
+
+## Adjusted repeatability: significant terms + (1|bird.ID)
+
+```{r}
+
+# calculate repeatabilty estimate
+lm <- lmer(log(shannon) ~ ageBinned*habitat + (1|bird.ID), data = nestling.metadata)
+VarCorr(lm)
+
+# repeatability = Std.Dev of intercept / (Std.Dev of intercept + Std.Dev. of Residual)
+# repeatability = w/i individual variation / w/i individual + between individual variation
+repeatability <- 0.38530 /(0.38530 +0.57078)
+
+##########
+# calculate confidence intervals w/ 2 possible methods
+
+# Method 1: bootstrapping approach
+#confint function calculates 95% confidence interval around model estimates
+#boot.lm <- confint(lm,method="boot",oldNames=FALSE,nsim=1000)
+#boot.lm
+#sd_(Intercept)|indiv = stdev of intercept for 95%CI
+#sigma = stdev model residual error 
+
+# Too easy to make mistakes using index
+#repeatability.lower <- boot.lm[1,1]/(boot.lm[1,1] + boot.lm[2,1]) # 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+#repeatability.upper <- boot.lm[1,2]/(boot.lm[1,2] + boot.lm[2,2]) # 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+
+repeatability.lower <- 0.1932208/(0.1932208 + 0.4541869) # 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+repeatability.upper <- 0.54511152/(0.54511152 + 0.65391858) # 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+paste("Adjusted Repeatability =", round(repeatability, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+```
+
+## Adjusted repeatability: significant terms + (1|nest) + (1|bird.ID)
+
+Should i nest these random terms? (1|nest/bird.ID)
+Note confint() gives slightly different results so make sure bird ID and nest repeatability calculated from the same model
+```{r}
+# calculate repeatabilty estimate
+lm <- lmer(log(shannon) ~ ageBinned*habitat + (1|nest) + (1|bird.ID), data = nestling.metadata)
+varCor.lm <- VarCorr(lm)
+varCor.lm
+
+#varCor.df <- as.data.frame(varCor.lm)
+# repeatability = Std.Dev of intercept / (Std.Dev of intercept + Std.Dev. of Residual + other variances)
+# repeatability = w/i individual variation / w/i individual + between individual variation
+repeatability.birdID <- 0/(0 + 0.52458+0.44876)
+#repeatability.nest <- 0.44876/(0.44876 + 0.52458)
+
+##########
+# calculate confidence intervals w/ 2 possible methods
+
+# Method 1: bootstrapping approach
+#confint function calculates 95% confidence interval around model estimates
+#boot.lm <- confint(lm,method="boot",oldNames=FALSE,nsim=1000)
+boot.lm
+#sd_(Intercept)|indiv = stdev of intercept for 95%CI
+#sigma = stdev model residual error
+
+# nest
+# repeatability.lower <-  0.3111614/(0.3111614 + 0.4068914)# 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+# repeatability.upper <-  0.581169950/(0.581169950 + 0.574477748)# 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+# paste("Adjusted Repeatability of nest=", round(repeatability.nest, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+
+# bird ID
+repeatability.lower <-  0/(0 + 0.4061402 + 0.2994517)# 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+repeatability.upper <-  0.33764226/(0.33764226 + 0.57518344 + 0.57701530)# 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+
+paste("Adjusted Repeatability of bird ID = ", round(repeatability.birdID, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+```
+
+## Adjusted repeatability: significant terms + (1|site) + (1|nest) + (1|bird.ID)
+
+Should i nest these random terms? (1|nest/bird.ID)
+```{r}
+# calculate repeatabilty estimate
+lm <- lmer(log(shannon) ~ ageBinned*habitat + (1|site) + (1|nest) + (1|bird.ID), data = nestling.metadata)
+varCor.lm <- VarCorr(lm)
+varCor.lm
+
+#varCor.df <- as.data.frame(varCor.lm)
+# repeatability = Std.Dev of intercept / (Std.Dev of intercept + Std.Dev. of Residual)
+# repeatability = w/i individual variation / w/i individual + between individual variation
+repeatability.birdID <- 0.000014527/(0.000014527 + 0.52458 + 0.39047 + 0.23020)
+#repeatability.nest <- 0.39047/(0.39047 + 0.52458)
+#repeatability.site <- 0.23020/(0.23020 + 0.52414)
+
+##########
+# calculate confidence intervals w/ 2 possible methods
+
+# Method 1: bootstrapping approach
+#confint function calculates 95% confidence interval around model estimates
+#boot.lm <- confint(lm,method="boot",oldNames=FALSE,nsim=1000)
+#boot.lm
+#sd_(Intercept)|indiv = stdev of intercept for 95%CI
+#sigma = stdev model residual error
+
+# repeatability of site
+# repeatability.lower <-  0/(0 + 0.4627653)# 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+# repeatability.upper <-  0.4503174/(0.4503174 + 0.5889201)# 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+# paste("Repeatability of site=", round(repeatability.site, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+
+# repeatability of nest
+# repeatability.lower <-  0.2400205/(0.2400205 + 0.4627653)# 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+# repeatability.upper <-  0.5096424/(0.5096424 + 0.5889201)# 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+# paste("Repeatability of nest=", round(repeatability.nest, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+
+# repeatability of bird ID
+repeatability.lower <-  0.0000007974143/(0.0000007974143 + 0.2492184 + 0 + 0.4611096)# 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+repeatability.upper <-  0.00003192461/(0.00003192461 + 0.5241986 + 0.4532565 + 0.5810181)# 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+paste("Repeatability of bird ID=", round(repeatability.birdID, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+```
+
+
+# Chao
+## Bird ID only
+```{r}
+# calculate repeatabilty estimate
+lm <- lmer(log(chao1) ~ (1|bird.ID), data = nestling.metadata)
+VarCorr(lm)
+
+# repeatability = Std.Dev of intercept / (Std.Dev of intercept + Std.Dev. of Residual)
+# repeatability = w/i individual variation / w/i individual + between individual variation
+repeatability.birdID <- 0.81862/(0.81862 + 0.96095)
+
+##########
+# calculate confidence intervals w/ 2 possible methods
+
+# Method 1: bootstrapping approach
+#confint function calculates 95% confidence interval around model estimates
+#boot.lm <- confint(lm,method="boot",oldNames=FALSE,nsim=1000)
+#boot.lm
+#sd_(Intercept)|indiv = stdev of intercept for 95%CI
+#sigma = stdev model residual error
+
+# repeatability of bird ID
+repeatability.lower <-  0.5242671/(0.5242671 + 0.7913014)# 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+repeatability.upper <-  1.050870/(1.050870 + 1.136463)# 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+paste("Repeatability of bird ID=", round(repeatability.birdID, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+```
+
+## Adjusted repeatability: sig terms + bird ID
+```{r}
+# calculate repeatabilty estimate
+lm <- lmer(log(chao1) ~ ageBinned*habitat + (1|bird.ID), data = nestling.metadata)
+VarCorr(lm)
+
+#varCor.df <- as.data.frame(varCor.lm)
+# repeatability = Std.Dev of intercept / (Std.Dev of intercept + Std.Dev. of Residual)
+# repeatability = w/i individual variation / w/i individual + between individual variation
+repeatability.birdID <- 0.87432/(0.87432 + 0.88142)
+
+##########
+# calculate confidence intervals w/ 2 possible methods
+
+# Method 1: bootstrapping approach
+#confint function calculates 95% confidence interval around model estimates
+boot.lm <- confint(lm,method="boot",oldNames=FALSE,nsim=1000)
+boot.lm
+#sd_(Intercept)|indiv = stdev of intercept for 95%CI
+#sigma = stdev model residual error
+
+# repeatability of bird ID
+repeatability.lower <-  0.6270289/(0.6270289 + 0.6894789)# 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+repeatability.upper <-  1.11475617/(1.11475617 + 1.04897527)# 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+paste("Repeatability of bird ID=", round(repeatability.birdID, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+```
+
+## Adjusted repeatability: sig terms + bird ID + nest
+```{r}
+# calculate repeatabilty estimate
+lm <- lmer(log(chao1) ~ ageBinned*habitat + (1|nest) + (1|bird.ID), data = nestling.metadata)
+VarCorr(lm)
+
+#varCor.df <- as.data.frame(varCor.lm)
+# repeatability = Std.Dev of intercept / (Std.Dev of intercept + Std.Dev. of Residual)
+# repeatability = w/i individual variation / w/i individual + between individual variation
+repeatability.birdID <- 0/(0 + 0.85101 + 0.84855)
+#repeatability.nest <- 0.84855/(0.84855 + 0.85101)
+
+##########
+# calculate confidence intervals w/ 2 possible methods
+
+# Method 1: bootstrapping approach
+#confint function calculates 95% confidence interval around model estimates
+#boot.lm <- confint(lm,method="boot",oldNames=FALSE,nsim=1000)
+#boot.lm
+#sd_(Intercept)|indiv = stdev of intercept for 95%CI
+#sigma = stdev model residual error
+
+# repeatability of nest
+# repeatability.lower <-  0.6142043/(0.6142043 + 0.6802939)# 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+# repeatability.upper <-  1.0694652/(1.0694652 + 0.9299032)# 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+# paste("Repeatability of nest=", round(repeatability.nest, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+
+# repeatability of bird ID
+repeatability.lower <-  0/(0 + 0.6026062 + 0.6684081)# 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+repeatability.upper <-  0.5235708/(0.5235708 + 1.0751694 + 0.9324623)# 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+paste("Repeatability of bird ID=", round(repeatability.birdID, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+```
+
+## Adjusted repeatability: sig terms + bird ID + nest + site
+
+confint fails to converge, even when iterations increased by x10 SUBSEQUENTLY converged
+```{r}
+# calculate repeatabilty estimate
+lm <- lmer(log(chao1) ~ ageBinned*habitat + (1|site) + (1|nest) + (1|bird.ID), data = nestling.metadata)
+VarCorr(lm)
+
+
+#varCor.df <- as.data.frame(varCor.lm)
+# repeatability = Std.Dev of intercept / (Std.Dev of intercept + Std.Dev. of Residual)
+# repeatability = w/i individual variation / w/i individual + between individual variation
+repeatability.birdID <- 0.000050663/(0.000050663 + 0.75670 + 0.84888 + 0.40859)
+#repeatability.nest <- 0.75670/(0.75670 + 0.84888)
+#repeatability.site <- 0.40859/(0.40859 + 0.84888)
+
+##########
+# calculate confidence intervals w/ 2 possible methods
+
+# Method 1: bootstrapping approach
+#confint function calculates 95% confidence interval around model estimates
+#boot.lm <- confint(lm,method="boot",oldNames=FALSE,nsim=10000)               # fails to converge
+#boot.lm
+#sd_(Intercept)|indiv = stdev of intercept for 95%CI
+#sigma = stdev model residual error
+
+# repeatability of site
+# repeatability.lower <-  0/(0 + 0.4627653)# 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+# repeatability.upper <-  0.4503174/(0.4503174 + 0.5889201)# 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+# paste("Repeatability of site=", round(repeatability.site, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+# 
+# # repeatability of nest
+# repeatability.lower <-  0.2400205/(0.2400205 + 0.4627653)# 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+# repeatability.upper <-  0.5096424/(0.5096424 + 0.5889201)# 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+# paste("Repeatability of nest=", round(repeatability.nest, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+# 
+# # repeatability of bird ID
+repeatability.lower <-  0.000002413475/(0.000002413475 + 0.5177017 + 0 + 0.7497311)# 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+repeatability.upper <-  0.0001086298/(0.0001086298 + 0.9783596612+ 0.8002886440 + 0.9441905708)# 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+paste("Repeatability of bird ID=", round(repeatability.birdID, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+```

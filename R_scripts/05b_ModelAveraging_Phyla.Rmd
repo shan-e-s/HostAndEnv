@@ -1,0 +1,516 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+Model averaging according to Grueber, Nakagawa paper
+
+24/1/2022
+* updating script to use abundance/numberOfReads as response and then giving vector of weights where "weights =  NumberOfReads" as plotting code wasnt working with original model specification. Results are exactly the same. 
+* (25/4/2022) This gives error in DHARMa which is expecting old method but dharma results are exactly the same when old method used.
+
+26/4/2022 NOT INCLUDING QUADRATIC
+* fitting quadratic brood size term
+  * doesnt improve diagnostics for all birds proteo
+  * I(brood^2) is included in averaged model for adult proteo so appears good fit there
+  * not included in averaged model for adult firmicutes
+* will exclude for now as unneccessarily complicated in terms whther or not to include in all global models
+
+28/4/2022
+* OLRE fit to adult models to fix overdispersion
+* it also improves residuals for all birds  but unclear whether or not to include
+
+```{r Housekeeping, echo=FALSE}
+rm(list=ls())
+#set.seed(111)
+```
+
+
+```{r}
+#install.packages("arm")
+
+library(MuMIn)
+library(arm)
+library(microbiome)
+library(dplyr)
+library(stringr)
+library(kableExtra)
+```
+
+```{r Read in data, warning=FALSE, echo=FALSE}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+#str(metadata)
+```
+
+Create and save a melted df of data glommed to phyla level
+```{r}
+# sample_data(phylo.spring) <- metadata.scaled
+#phyla.glom <-  tax_glom(phylo.spring, "Phylum", NArm = TRUE)
+#mot <- psmelt(phyla.glom)
+#saveRDS(mot, "../Data/05_melted.phyla.glom.rds")
+
+```
+
+```{r}
+mot <- readRDS("../Data/05_melted.phyla.glom.rds")
+```
+
+```{r Split df by phyla}
+proteobacteria.df <- mot[mot$Phylum=="Proteobacteria",]
+firmicutes.df <- mot[mot$Phylum=="Firmicutes",]
+
+```
+
+Split df by phyla and subset to adults
+```{r }
+proteobacteria.adult.df <- mot[(mot$Phylum=="Proteobacteria" & mot$ageBinned=="adult"),]
+firmicutes.adult.df <- mot[(mot$Phylum=="Firmicutes" & mot$ageBinned=="adult"),]
+
+#proteobacteria.adult.df$Sex <- relevel(proteobacteria.adult.df$Sex, "M") # 
+#firmicutes.adult.df$Sex <- relevel(firmicutes.adult.df$Sex, "M") #
+
+```
+
+# Add Backward difference coding
+
+```{r}
+my.backward.diff = matrix(c(-2/3, 1/3, 1/3, -1/3, -1/3, 2/3), ncol = 2)
+my.backward.diff
+```
+
+```{r}
+levels(proteobacteria.df$ageBinned) # verify: 1week,2week,adult
+#assigning the backward difference coding to ageBinned
+contrasts(proteobacteria.df$ageBinned) = my.backward.diff
+```
+
+```{r}
+#str(proteobacteria.df)
+```
+
+# Proteobacteria all birds
+
+Global model
+* model fails to converge AND nearly unidentifiable
+* dredge struggling to run all models, very slow
+* model converges but is nearly identifiable even after standardising variables downstream
+```{r Binomial model- Proteobacteria}
+binomial.response <- c(proteobacteria.df$Abundance/proteobacteria.df$NumberOfReads)
+#binomial.response <- cbind(proteobacteria.df$Abundance, proteobacteria.df$NumberOfReads - proteobacteria.df$Abundance) # need to drop weights=__ if using this
+
+#global.proteo <- glmer(binomial.response ~  ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + layDateFirst*habitat+ broodSizeWhenSampled*habitat + DistanceToEdge*habitat + broodSizeWhenSampled*DistanceToEdge + DistanceToEdge*layDateFirst + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, weights = NumberOfReads, data = proteobacteria.df)#,  glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 100000)))
+
+#summary(global.proteo)
+```
+
+Try Obs level random effect (not individual) to see if that corrects tiny SEs
+```{r}
+# OLRE <- 1:nrow(proteobacteria.df)
+# proteobacteria.df1 <-cbind(proteobacteria.df, OLRE) 
+```
+
+Fit less complex global model to aid convergence
+* only fit ageBinned interaction with each other variable
+* model still fails to converge and nearly unidentifiable BUT VARIABLES are not standardised yet
+* converges when standardised and nearly unidentifiable warning disappears
+```{r}
+binomial.response <- c(proteobacteria.df$Abundance/proteobacteria.df$NumberOfReads)
+
+global.proteo <- glmer(binomial.response ~  ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned * DistanceToEdge + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, weights = NumberOfReads, data = proteobacteria.df) # , REML=FALSE not valid argument
+
+summary(global.proteo)
+```
+
+
+Standardize the input variables
+* model converges after standardising
+```{r}
+stdz.model <- arm::standardize(global.proteo, standardize.y = FALSE)
+summary(stdz.model)
+```
+
+
+Convergence warning- does it apply to all models or just some
+```{r}
+# change na. action
+# options(na.action = "na.fail") # required for dredge to run for some reason
+# # 
+# model.set.proteo <- dredge(stdz.model)
+# # 
+# options(na.action = "na.omit") # set back to default
+
+```
+
+```{r}
+#model.set.proteoOLRE
+#saveRDS(model.set.proteo, "../Data/dredgeSaves/model.set.proteo")
+model.set.proteo <- readRDS("../Data/dredgeSaves/model.set.proteo")
+```
+
+Check which models non-convergent
+```{r}
+# options(warn=1)
+# options(na.action = "na.fail") # required for dredge to run for some reason
+# 
+# model.set.trace <- dredge(stdz.model,trace=TRUE)
+# 
+# options(na.action = "na.omit") # set back to default
+```
+
+
+Only one model in top model set in both regular and OLRE versions
+```{r}
+top.models <- get.models(model.set.proteo, subset = delta<2)
+summary(get.models(model.set.proteo, subset = 1)[[1]])
+
+# save model for results table downstream
+proteobacteria.model <- get.models(model.set.proteo, subset = 1)[[1]]
+```
+
+## Proteobacteria Model averaging
+
+Only one model in top model set so averaging unneccessary
+```{r}
+# model.avg.proteobacteria <- model.avg(top.models)
+# 
+# summary(model.avg.proteobacteria)
+```
+
+# TEST
+
+Log(distance)
+```{r}
+# binomial.response <- c(proteobacteria.df$Abundance/proteobacteria.df$NumberOfReads)
+# #binomial.response <- cbind(proteobacteria.df$Abundance, proteobacteria.df$NumberOfReads - proteobacteria.df$Abundance) # need to drop weights=__ if using this
+# 
+# proteo <- glmer(binomial.response ~  ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + ageBinned*I(log(DistanceToEdge)) + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, weights = NumberOfReads, data = proteobacteria.df)#,  glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 100000)))
+# 
+# summary(proteo)
+```
+
+# Firmicutes all birds
+
+```{r}
+my.backward.diff = matrix(c(-2/3, 1/3, 1/3, -1/3, -1/3, 2/3), ncol = 2)
+my.backward.diff
+```
+
+```{r}
+levels(firmicutes.df$ageBinned) # verify: 1week,2week,adult
+#assigning the backward difference coding to ageBinned
+contrasts(firmicutes.df$ageBinned) = my.backward.diff
+```
+
+Global model
+
+Model fails to converge and nearly unidentifiable EVEN AFTER STANDARDISING
+```{r Binomial model- Firmicutes}
+binomial.response <- cbind(firmicutes.df$Abundance/firmicutes.df$NumberOfReads)
+
+global.firmicutes <- glmer(binomial.response ~  ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + layDateFirst*habitat+ broodSizeWhenSampled*habitat + DistanceToEdge*habitat + broodSizeWhenSampled*DistanceToEdge + DistanceToEdge*layDateFirst + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, weights = NumberOfReads, data = firmicutes.df)
+
+summary(global.firmicutes)
+```
+
+```{r}
+OLRE <- 1:nrow(firmicutes.df)
+
+```
+
+Fit less complex global model to aid convergence
+* only fit ageBinned interaction with each other variable
+* model still fails to converge and nearly unidentifiable but is fixed after standardising variables
+```{r}
+binomial.response <- cbind(firmicutes.df$Abundance/firmicutes.df$NumberOfReads)
+
+global.firmicutes <- glmer(binomial.response ~  ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned * DistanceToEdge + (1|OLRE) + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, weights = NumberOfReads, data = firmicutes.df)
+
+summary(global.firmicutes)
+```
+
+Standardize the input variables
+```{r}
+stdz.model <- arm::standardize(global.firmicutes, standardize.y = FALSE)
+summary(stdz.model)
+```
+
+```{r}
+# change na. action
+
+# options(na.action = "na.fail") # required for dredge to run for some reason
+# 
+# #getAllTerms(stdz.model) 
+# 
+# model.set.firmicutes <- dredge(stdz.model) #, fixed= ~ ageBinned + c.habitat + ageBinned:c.habitat, rank="AICc")
+# 
+# options(na.action = "na.omit") # set back to default
+```
+
+```{r}
+#model.set.firmicutesOLRE
+#saveRDS(model.set.firmicutes, "../Data/dredgeSaves/model.set.firmicutes")
+model.set.firmicutes <- readRDS("../Data/dredgeSaves/model.set.firmicutes")
+```
+
+Check which models non-convergent
+* models: 
+```{r}
+# options(na.action = "na.fail") # required for dredge to run for some reason
+# 
+# options(warn=1)
+# model.set.trace <- dredge(stdz.model,trace=TRUE)
+# options(na.action = "na.omit") # set back to default
+# 
+```
+
+Get top models
+1 model in regular. 3 models in OLRE
+```{r}
+top.models <- get.models(model.set.firmicutes, subset = delta<2)
+
+summary(get.models(model.set.firmicutes, subset = 1)[[1]])
+
+# save model for results table downstream
+firmicutes.model <- get.models(model.set.firmicutes, subset = 1)[[1]]
+```
+
+## Firmicutes Model averaging
+
+Only one model in top model set so averaging is unneccessary
+```{r}
+# model.avg.firmicutes <- model.avg(top.models)
+# # 
+# summary(model.avg.firmicutes)
+
+```
+
+# Proteobacteria adult birds
+
+Model fails to converge and nearly unidentifiable but fixed by standardising
+* site gives singular fit so removed
+* adding individual level effect (25/4/2022) to account for potential overdispersion evident in dharma plots
+```{r}
+binomial.response <- cbind(proteobacteria.adult.df$Abundance / proteobacteria.adult.df$NumberOfReads)
+
+global.adult.proteobacteria <- glmer(binomial.response ~ ageDays + habitat + Sex*layDateFirst + Sex*broodSizeWhenSampled  + Sex*DistanceToEdge + broodSizeWhenSampled*DistanceToEdge +  DistanceToEdge*layDateFirst + (1|nest/bird.ID) + (1|SequencePlate), family= binomial, weights = NumberOfReads, data = proteobacteria.adult.df)
+
+summary(global.adult.proteobacteria)
+```
+
+Standardize the input variables
+
+```{r}
+stdz.model <- arm::standardize(global.adult.proteobacteria, standardize.y = FALSE)
+summary(stdz.model)
+```
+
+```{r}
+# change na. action
+
+# options(na.action = "na.fail") # required for dredge to run for some reason
+# # 
+# # #getAllTerms(stdz.model) 
+# # 
+# model.set.proteo.adult <- dredge(stdz.model, rank="AICc") #, fixed= ~ ageBinned + c.habitat + ageBinned:c.habitat, rank="AICc")
+# # 
+# options(na.action = "na.omit") # set back to default
+```
+
+```{r}
+#saveRDS(model.set.proteo.adult, "../Data/dredgeSaves/model.set.proteo.adult")
+model.set.proteo.adult <- readRDS("../Data/dredgeSaves/model.set.proteo.adult")
+```
+
+Check which models non-convergent
+* models: 
+```{r}
+#options(na.action = "na.fail") # required for dredge to run for some reason
+
+#options(warn=1)
+#model.set.trace <- dredge(stdz.model,trace=TRUE)
+#options(na.action = "na.omit") # set back to default
+
+```
+
+Get top models
+
+```{r}
+top.models.pro.adult <- get.models(model.set.proteo.adult, subset = delta<2)
+#summary(get.models(model.set, subset = 1)[[1]])
+
+```
+
+## Adult Proteobacteria Model averaging
+
+```{r}
+model.avg.proteobacteria.adult <- model.avg(top.models.pro.adult)
+
+summary(model.avg.proteobacteria.adult)
+```
+
+# Firmicutes adult birds
+
+Model fails to converge and nearly unidentifiable BUT fixed after standardise step
+
+Singular warning disappears after standardise step downstream BUT will drop site anyway as many singular warnings during dredge, no qualitative change to model average results
+
+Adding individual level random effect (25/4/2022) to address overdispersion
+```{r}
+binomial.response <- cbind(firmicutes.adult.df$Abundance / firmicutes.adult.df$NumberOfReads)
+
+global.adult.firmicutes <- glmer(binomial.response ~   ageDays + habitat + Sex*layDateFirst + Sex*broodSizeWhenSampled +  Sex*DistanceToEdge + broodSizeWhenSampled*DistanceToEdge + DistanceToEdge*layDateFirst + (1|nest/bird.ID) + (1|SequencePlate), family= binomial, weights = NumberOfReads, data = firmicutes.adult.df)
+
+summary(global.adult.firmicutes)
+```
+
+Standardize the input variables
+
+```{r}
+stdz.model <- arm::standardize(global.adult.firmicutes, standardize.y = FALSE)
+summary(stdz.model)
+```
+
+```{r}
+# change na. action
+# 
+# options(na.action = "na.fail") # required for dredge to run for some reason
+# # 
+# # #getAllTerms(stdz.model) 
+# # 
+# model.set.firmicutes.adult <- dredge(stdz.model) #, fixed= ~ ageBinned + c.habitat + ageBinned:c.habitat, rank="AICc")
+# # 
+# options(na.action = "na.omit") # set back to default
+```
+
+```{r}
+#saveRDS(model.set.firmicutes.adult, file = "../Data/dredgeSaves/model.set.firmicutes.adult")
+
+model.set.firmicutes.adult <- readRDS(file = "../Data/dredgeSaves/model.set.firmicutes.adult")
+```
+
+
+Get top models
+
+```{r}
+top.models.fir.adult <- get.models(model.set.firmicutes.adult, subset = delta<2)
+```
+
+## Adult Firmicutes Model averaging
+
+```{r}
+model.avg.firmicutes.adult <- model.avg(top.models.fir.adult)
+
+summary(model.avg.firmicutes.adult)
+```
+
+# results
+
+## All birds proteobacteria results
+```{r}
+proteobacteria.all.full <- summary(proteobacteria.model)[["coefficients"]] # returns summary table for full average
+
+#proteobacteria.all.conditional <- summary(model.avg.proteobacteria)[["coefficients"]] # returns summary table for conditional average
+```
+
+```{r}
+#make df of lmer output
+proteobacteria.modelAvg.df <- as_tibble(rbind(proteobacteria.all.full), rownames="Independent variables") %>%
+  dplyr::rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+  mutate(P_estimate=ifelse(P_estimate>=0.05 & P_estimate<=0.06,str_c(P_estimate,"  ."),P_estimate))
+
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+proteobacteria.results <- kable(proteobacteria.modelAvg.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) Top model, proteobacteria",1,nrow(proteobacteria.modelAvg.df)) %>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+proteobacteria.results
+```
+
+## All birds firmicutes results
+
+```{r}
+firmicutes.all.full <- summary(firmicutes.model)[["coefficients"]] # returns summary table for full average
+
+#firmicutes.all.conditional <- summary(model.avg.firmicutes)$coefmat.subset # returns summary table for conditional average
+```
+
+```{r}
+#make df of lmer output
+firmicutes.modelAvg.df <- as_tibble(rbind(firmicutes.all.full), rownames="Independent variables") %>%
+  dplyr::rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+  mutate(P_estimate=ifelse(P_estimate>=0.05 & P_estimate<=0.06,str_c(P_estimate,"  ."),P_estimate))
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+firmicutes.results <- kable(firmicutes.modelAvg.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) Top model, Firmicutes",1,nrow(firmicutes.modelAvg.df)) %>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+firmicutes.results
+```
+
+## Adults proteobacteria results
+```{r}
+proteobacteria.adult.full <- summary(model.avg.proteobacteria.adult)$coefmat.full # returns summary table for full average
+
+proteobacteria.adult.conditional <- summary(model.avg.proteobacteria.adult)$coefmat.subset # returns summary table for conditional average
+```
+
+```{r}
+#make df of lmer output
+proteobacteria.adult.modelAvg.df <- as_tibble(rbind(proteobacteria.adult.full, proteobacteria.adult.conditional), rownames="Independent variables") %>%
+  dplyr::rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+  mutate(P_estimate=ifelse(P_estimate>=0.05 & P_estimate<=0.06,str_c(P_estimate,"  ."),P_estimate))
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+proteobacteria.adult.results <- kable(proteobacteria.adult.modelAvg.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) Full average",1,nrow(proteobacteria.adult.modelAvg.df)/2) %>%
+  kableExtra::group_rows("(b) Conditional average",(nrow(proteobacteria.adult.modelAvg.df)/2)+1,nrow(proteobacteria.adult.modelAvg.df))%>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+proteobacteria.adult.results
+```
+## Adult firmicutes results
+
+```{r}
+firmicutes.adult.full <- summary(model.avg.firmicutes.adult)$coefmat.full # returns summary table for full average
+
+firmicutes.adult.conditional <- summary(model.avg.firmicutes.adult)$coefmat.subset # returns summary table for conditional average
+```
+
+```{r}
+#make df of lmer output
+firmicutes.adult.modelAvg.df <- as_tibble(rbind(firmicutes.adult.full, firmicutes.adult.conditional), rownames="Independent variables") %>%
+  dplyr::rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+  mutate(P_estimate=ifelse(P_estimate>=0.05 & P_estimate<=0.06,str_c(P_estimate,"  ."),P_estimate))
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+firmicutes.adult.results <- kable(firmicutes.adult.modelAvg.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) Full average",1,nrow(firmicutes.adult.modelAvg.df)/2) %>%
+  kableExtra::group_rows("(b) Conditional average",(nrow(firmicutes.adult.modelAvg.df)/2)+1,nrow(firmicutes.adult.modelAvg.df))%>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+firmicutes.adult.results
+```

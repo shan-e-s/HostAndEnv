@@ -1,0 +1,173 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Plots for host and env alpha diversity models
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+#install.packages("interactions")
+library(jtools)
+library(interactions)
+library(ggplot2)
+library(MuMIn)
+library(lme4)
+library(microbiome)
+library(cowplot)
+
+```
+
+https://stackoverflow.com/questions/28633537/partial-residual-plot-based-on-model-average-coefficients-in-r
+https://stackoverflow.com/questions/25695565/predict-with-arbitrary-coefficients-in-r/25697144#25697144
+https://stackoverflow.com/questions/56924967/convert-model-averaging-results-from-mumin-to-plot-in-visreg-or-effects-packages
+https://www.researchgate.net/post/How_can_i_plot_Estimates_of_Average_Models_using_Full_Average_values
+
+
+Difficult to get plotting packages working with model averaged results. Is a hack to take the full model or one of the most complex 'top.model' and to replace the coefficients with those of the model.avg object? 
+
+The habitat variable is centred by the arm::standardize command and so is represented by numeric values rather than categorical factor designations. 
+* where -0.79 is conifer and 0.21 is deciduous
+* maybe i could replace those values with strings before plotting?
+* Or just reference those values and overwrite the labels in the plot
+* really good blog post which deals with plotting centred predictors with interactions: https://seananderson.ca/2014/07/30/centering-interactions/
+
+###########################################################################################################################################
+###########################################################################################################################################
+###########################################################################################################################################
+# read in data
+```{r}
+model.set.all.shannon <- readRDS("../Data/dredgeSaves/model.set.all.shannon")
+model.set.all.chao <- readRDS("../Data/dredgeSaves/model.set.all.chao")
+
+top.models <- get.models(model.set.all.shannon, subset = delta<2, REML = TRUE)
+top.models2 <- get.models(model.set.all.chao, subset = delta<2, REML = TRUE)
+
+# model.set.adult.shannon <- readRDS("../Data/dredgeSaves/model.set.adult.shannon")
+# model.set.adult.chao <- readRDS("../Data/dredgeSaves/model.set.adult.chao")
+# 
+# top.models.3 <- get.models(model.set.adult.shannon, subset = delta<2, REML = TRUE)
+# top.models.4<- get.models(model.set.adult.chao, subset = delta<2, REML = TRUE)
+```
+
+```{r}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+```
+
+# All birds
+## Distance to edge, shannon
+
+"CUD Bright" from jtools and ultimately Paul Tol is color scheme.
+broodSizeXage.proteo.all[["plot_env"]][["colors"]]
+   Day 8    Day 15     Adult 
+"#49b7fc" "#ff7b00" "#17d898" 
+```{r}
+#define colors for each point
+#pnt.color <- ifelse(metadata$ageBinned=="adult","#17d898" , ifelse(metadata$ageBinned=="2week","#ff7b00" ,"#49b7fc"))
+
+#scales::hue_pal(broodSizeXage.proteo.all)
+```
+
+```{r}
+all.sh.lmm.top <- top.models[[1]]
+
+distance.shannon.all<-effect_plot(all.sh.lmm.top,pred=z.DistanceToEdge,x.label="Distance to edge", y.label="log(Shannon)", interval =TRUE, int.type = "confidence", partial.residuals = TRUE, data = all.sh.lmm.top@frame) #point.color = pnt.color,
+
+distance.shannon.all
+```
+
+## Distance to edge, chao
+```{r}
+all.chao.lmm.top <- top.models2[[1]]
+summary(all.chao.lmm.top)
+
+#all.chao.lmm.top@frame$c.habitat <- ifelse(all.chao.lmm.top@frame$c.habitat<0, "conifer", "deciduous")
+
+distance.chao.all<-effect_plot(all.chao.lmm.top, pred=z.DistanceToEdge, x.label="Distance to edge", y.label="log(Chao)", interval =TRUE, int.type = "confidence", partial.residuals = TRUE,  data = all.chao.lmm.top@frame) #point.color = pnt.color,
+
+distance.chao.all
+```
+## Age, chao
+Age is significant in full averaged model while age*habitat is only included 4th top model
+
+```{r}
+all.chao.lmm.top <- top.models2[[1]]
+summary(all.chao.lmm.top)
+
+#all.chao.lmm.top@frame$c.habitat <- ifelse(all.chao.lmm.top@frame$c.habitat<0, "conifer", "deciduous")
+
+age.chao.all<-effect_plot(all.chao.lmm.top, pred=ageBinned, x.label="Age", y.label="log(Chao)", interval =TRUE, int.type = "confidence", partial.residuals = TRUE, data = all.chao.lmm.top@frame)
+
+age.chao.all
+```
+
+## age*habitat, chao
+Age is significant in full averaged model while age*habitat is only included 4th top model
+```{r}
+all.chao.lmm.top <- top.models2[[4]]
+summary(all.chao.lmm.top)
+
+all.chao.lmm.top@frame$c.habitat <- ifelse(all.chao.lmm.top@frame$c.habitat<0, "Conifer", "Deciduous")
+
+ageXhabitat.chao.all<-cat_plot(all.chao.lmm.top, pred=ageBinned, modx=c.habitat, x.label="Age", y.label="log(Chao)", legend.main = "Habitat", pred.labels = c("Day 8", "Day 15", "Adult"), interval =TRUE, int.type = "confidence", partial.residuals = TRUE, jitter = 0.4, point.alpha = 0.3, data = all.chao.lmm.top@frame)
+
+ageXhabitat.chao.all
+```
+
+# Combine plots
+
+```{r}
+theme_classic2 <- function(base_size = 12, base_family = ""){
+  theme_bw(base_size = base_size, base_family = base_family) %+replace%
+    theme(
+      legend.position = "none",
+      panel.border     = element_blank(),
+      axis.line        = element_line(colour = "black"),
+      panel.grid.major=element_line(colour="grey", size=0.5, 3),
+      panel.grid.major.x = element_blank(),
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      panel.grid.minor.y = element_blank(),
+      strip.background = element_blank(),
+      legend.key       = element_blank()
+    )
+}
+```
+
+```{r}
+#p4.legend <- get_legend(broodSizeXage.proteo.all) # from script 05c_
+
+p1 <- plot_grid(distance.shannon.all+theme_classic2(), distance.chao.all+theme_classic2(), nrow = 1,rel_widths = c(1,1,0.4)) #p4.legend
+p1
+```
+
+```{r}
+ageXhabitat.chao.all+theme_classic()
+```
+
+```{r}
+# # make grid of age plots
+# p1 <- plot_grid(age.proteo.adult+theme_classic2()+ylab(NULL)+labs(title="Proteobacteria"), age.firmic.adult+theme_classic2()+ylab(NULL)+labs(title="Firmicutes")) 
+# p1.legend <- get_legend(age.proteo.adult)
+# 
+# # fake legend to align properly with below plots
+# p1.grid <- plot_grid(p1, p1.legend, rel_widths = c(3, .4), labels = c("A", "B", "") )
+# 
+# #make grid of all adult interaction plots
+# p2 <- plot_grid(broodSizeXsex.proteo.adult+theme_classic2()+ylab(NULL), broodSizeXsex.firmic.adult+theme_classic2()+ylab(NULL), distanceXsex.proteo.adult+theme_classic2()+ylab(NULL), distanceXsex.firmic.adult+theme_classic2()+ylab(NULL), ncol = 2, labels = c("C", "D", "E", "F"), label_x = 0, label_y = 1.1)
+# 
+# # get common legend of all interaction plots
+# p2.legend <- get_legend(broodSizeXsex.proteo.adult)
+# 
+# p2.grid <- plot_grid(p2, p2.legend, rel_widths = c(3, .4))
+# 
+# # combine
+# adult.grid <- plot_grid(p1.grid, p2.grid, nrow = 2, rel_heights = c(1,2))
+# 
+# adult.grid
+```

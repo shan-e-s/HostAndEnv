@@ -1,0 +1,1098 @@
+---
+title: "Phylum level glmms"
+output: html_notebook
+---
+
+Notes:
+
+* See Gillingham flamingo paper for similar analysis
+
+```{r setup, echo=FALSE}
+library( knitr )
+knitr::opts_chunk$set(echo=FALSE)
+options(kableExtra.auto_format = FALSE) # need this so kable renders in Word
+```
+
+```{r Housekeeping, echo=FALSE}
+rm(list=ls())
+set.seed(111)
+```
+
+
+```{r Set-up, message=FALSE, echo=FALSE}
+# libraries
+#install.packages("tidyverse", dependencies = T)
+library(vegan)  ##note had trouble installing, needed to install gfortran first
+library(tidyverse) #
+library(phyloseq) 
+library(lme4)
+library(metagenomeSeq)
+library(microbiome)
+library(car)
+library(gridExtra)
+library(ggpubr)
+library(lmerTest) # NOTE: overloads lme4 and extends test to provide p-values AND therefore causes DHARMa to give a warning but doesnt appear to effect it
+library(DHARMa)
+library(MASS)
+library(kableExtra) # remember to cancel global option defaults of this pkg
+library(effects)
+library(Rmisc)
+
+```
+
+# Read-in Data
+
+```{r Read in data, warning=FALSE, echo=FALSE}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+```
+
+
+# Data cleaning
+
+Scale and centring numeric predictors and impute values for samples with missing info.
+
+* changing DW30F seems to affects the results a fair bit, p-value drops from 0.0371 to 0.0267 and simulated residual plot changes.
+* should i be scaling scaled.mass again?
+
+```{r Data splits, echo=FALSE}
+# relevel ageBinned factor
+metadata$ageBinned <- relevel(metadata$ageBinned, "1week")
+
+# relevel habitat
+metadata$habitat <- relevel(metadata$habitat, "deciduous")
+
+# Split data into adult and nestlings. Use ageBinned("1week","2week","adult").
+# subset to nestlings
+## alt use meta() to extract metadata as df
+# phylo.nestlings <- subset_samples(phylo.spring, ageBinned=="1week"|ageBinned=="2week")
+# nestlings.meta <- meta(phylo.nestlings@sam_data)
+# 
+# # subset to adults
+phylo.adults <- subset_samples(phylo.spring, ageBinned=="adult")
+adults.meta <- meta(phylo.adults@sam_data)
+```
+
+```{r}
+#removed "QubitDNA"
+numeric.predictors <- c("Tarsus","Weight", "wing", "broodSizeWhenSampled", "broodSizeMax", "totalFledge", "clutchSize", "layDateFirst", "numberDeadPreRinged", "numberDeadPostRinged","scaled.mass","scaled.mass.wing.adult", "scaled.mass.tarsus.adult","scaled.mass.chick", "scaled.mass.tarsus", "scaled.mass.wing", "DistanceToEdge")
+
+# centre and scale numeric variables ie. subtract mean and divide by st. deviation
+metadata.scaled <- metadata
+metadata.scaled[,numeric.predictors] <- scale(metadata.scaled[,numeric.predictors])
+
+adults.meta.scaled <- adults.meta
+adults.meta.scaled[,numeric.predictors] <- scale(adults.meta.scaled[,numeric.predictors])
+# 
+# nestlings.meta.scaled <- nestlings.meta
+# nestlings.meta.scaled[,numeric.predictors] <- scale(nestlings.meta.scaled[,numeric.predictors])
+
+```
+
+# Relative abundance graph
+
+```{r, echo=FALSE, cache=TRUE, fig.cap="Relative abundance plot of phyla that have abundance >0.1."}
+# phylo.glom <-  tax_glom(phylo.spring, "Phylum", NArm = TRUE)  # fast, <2mins
+# ## transform to relative abundances
+# phylo.ra <- transform_sample_counts(phylo.glom, function(x){x / sum(x)})
+# 
+# # special phyloseq psmelt function retuns dataframe w/ otu abundances, taxa names and sample data
+# mot.ra <- psmelt(phylo.ra)
+# 
+# mot.filt <- mot.ra[mot.ra$Abundance>=0.1,] #returns table w/ phyla over 10%
+
+# # stacked barplot of abundances
+# ggplot(mot.filt,aes(x=Sample, y=Abundance, fill=Phylum)) +
+#   geom_bar(stat = "identity", width = 0.85) +
+#   theme(axis.text.x = element_blank(), axis.title.x = element_blank(), axis.ticks.x = element_blank()) +
+#   facet_grid(.~ageBinned, drop = TRUE, space = "free_x", scales = "free")  #group labels on horizontal axis
+# 
+
+```
+
+Mean relative abundance and SE
+```{r}
+phylo.glom <-  tax_glom(phylo.spring, "Phylum", NArm = TRUE)  # fast, <2mins
+## transform to relative abundances
+phylo.glom.ra <- transform_sample_counts(phylo.glom, function(x){x / sum(x)}) # uncomment to convert to relative abundance
+
+mot <- psmelt(phylo.glom.ra)
+# calc standard error
+se <- function(x) sqrt(var(x)/length(x))
+
+mot %>%
+  group_by(Phylum) %>%
+  summarise_at(vars(Abundance), funs(mean, se))%>%
+  arrange(-mean)%>% 
+  mutate_if(is.numeric, round, 3)
+```
+
+Boxplot of phyla abundance. Filter to phyla w/ mean over some threshold
+
+* Maybe i should include Verrucomicrobia, greater abundance than Tenericutes
+* Should look at Actinobacteria
+* Is planctomycetes always green algae/ chloroplasts?
+```{r, eval=FALSE}
+# calc mean abundance of each phyla
+# calc mean abundance of each phyla not including zero abundances
+
+# plot abundances by phyla
+# need melted table
+mot <- psmelt(phylo.glom)
+
+abundance.10pc <- unique(mot[mot.ra$Abundance>=0.1, "Phylum"])
+mot.filt.1 <- mot[mot$Phylum %in% abundance.10pc,] #returns table w/ phyla over 10%
+mot.filt.2 <- mot.filt.1[!mot.filt.1$Phylum %in% c("Firmicutes", "Proteobacteria"),] # drop Firmi and Proteo as they are very high and messing up scale
+
+ggplot(mot.filt.2, aes(x=Phylum,y=Abundance)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  coord_cartesian(ylim=c(0,5000)) # limits axis without dropping observations
+```
+
+Create abundance column w/o converting to relative abundance.
+```{r}
+sample_data(phylo.spring) <- metadata.scaled
+phylo.glom.scaled <-  tax_glom(phylo.spring, "Phylum", NArm = TRUE)  # fast, <2mins
+mot <- psmelt(phylo.glom.scaled)
+```
+
+```{r Split df by phyla}
+proteobacteria.df <- mot[mot$Phylum=="Proteobacteria",]
+firmicutes.df <- mot[mot$Phylum=="Firmicutes",]
+tenericutes.df <- mot[mot$Phylum=="Tenericutes",]
+bacteroidetes.df <- mot[mot$Phylum=="Bacteroidetes",]
+actinobacteria.df <- mot[mot$Phylum=="Actinobacteria",]
+
+```
+
+Clean up environment- does this speed up R? 
+```{r}
+rm("phylo.spring", "phylo.glom.ra", "phylo.scaled", "mot") 
+```
+
+# All birds
+
+```{r Histogram comparison}
+p.hist <- ggplot(proteobacteria.df, aes(Abundance))+geom_histogram(binwidth=0.01)
+f.hist <- ggplot(firmicutes.df, aes(Abundance))+geom_histogram(binwidth=0.01)
+t.hist <- ggplot(tenericutes.df, aes(Abundance))+geom_histogram(binwidth=0.01)
+b.hist <- ggplot(bacteroidetes.df, aes(Abundance))+geom_histogram(binwidth=0.01) # looks geometric
+
+#ggarrange(p.hist,f.hist,t.hist,b.hist) # very slow for some reason, causes crash
+```
+
+## Proteobacteria
+
+```{r}
+ggplot(proteobacteria.df, aes(ageBinned, Abundance, color=habitat)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Proteobacteria abundance")
+
+ggplot(proteobacteria.df, aes(habitat, Abundance, color=ageBinned)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Proteobacteria abundance")
+
+```
+
+```{r}
+my.backward.diff = matrix(c(-2/3, 1/3, 1/3, -1/3, -1/3, 2/3), ncol = 2)
+my.backward.diff
+```
+
+```{r}
+levels(proteobacteria.df$ageBinned) # verify: 1week,2week,adult
+#assigning the backward difference coding to ageBinned
+contrasts(proteobacteria.df$ageBinned) = my.backward.diff
+```
+
+```{r}
+plot(proteobacteria.df$ageBinned)
+plot(proteobacteria.df$habitat)
+hist(proteobacteria.df$layDateFirst)
+hist(proteobacteria.df$broodSizeWhenSampled)
+hist(proteobacteria.df$DistanceToEdge)
+
+```
+
+Enrico advised binomial model because im dealing with proportions. 
+* Binomial model expects 2 column response variable of successes vs failures. Which in my case will be number of proteobacteria detected vs number of other bacteria detected. Specifically to my dataframe this will be "Abundance" vs "Abundance - NumberOfReads". 
+* According to Zuur book could also model w/ response as simple relative abundance as in other models. BUT Enrico says if this method used, i would have to account for sample depth somehow.
+
+Getting different results (in terms of model convergence) when using metadata.scaled vs proteobac.df
+* using metadata.scaled model converges BUT DATAFRAME IS WRONG, abundances not matched to correct individuals
+* using proteobacteria.df model fails to converge, unidentifiable etc. prompts to rescale variables
+
+* dropped age\*Distance*habitat, still doesnt converge 
+* dropped age*broodSize, still doesnt converge 
+* dropped age\*habitat*layDate, still doesnt converge
+
+* age\*Distance\*habitat only converges
+* residuals good
+
+* trying new optimizer didnt work
+```{r Binomial model- Proteobacteria}
+# glmer doesnt like being given dataframe so use cbind only
+#binomial.response <- as.data.frame(cbind(proteobacteria.df$Abundance,proteobacteria.df$NumberOfReads-proteobacteria.df$Abundance)) %>% rename("Success"=V1, "Failure"=V2)
+#proteobacteria.df$habitat <- relevel(proteobacteria.df$habitat, "deciduous")
+
+binomial.response <- cbind(proteobacteria.df$Abundance,proteobacteria.df$NumberOfReads-proteobacteria.df$Abundance)
+
+all.pro <- glmer(binomial.response ~  ageBinned*DistanceToEdge*habitat + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = proteobacteria.df)
+
+#all.pro <- glmer(binomial.response ~  ageBinned * habitat * layDateFirst + ageBinned:broodSizeWhenSampled +broodSizeWhenSampled + ageBinned:DistanceToEdge:habitat + DistanceToEdge + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = proteobacteria.df, control=glmerControl(optCtrl=list(maxfun=200000)))
+
+  
+summary(all.pro)
+```
+
+Plot residuals w/ DHARMa instead of standard plot. 
+* "if pred is a factor, a boxplot will be plotted instead of a scatter plot. The distribution for each factor level should be uniformly distributed, so the box should go from 0.25 to 0.75, with the median line at 0.5".
+* getting scatter plot instead of boxplot since adding DistanceToEdge
+* residuals look better after logging DistanceToEdge
+* removed log of distance, residuals look better since swapping BS for clutch size
+```{r}
+simOut <- simulateResiduals(all.pro, n = 1000)
+plot(simOut)
+```
+Plot residuals against other predictors. Do i need to do this for random effects too?
+```{r}
+plotResiduals(proteobacteria.df$ageBinned, simOut$scaledResiduals)
+plotResiduals(proteobacteria.df$broodSizeWhenSampled, simOut$scaledResiduals)
+plotResiduals(proteobacteria.df$layDateFirst, simOut$scaledResiduals)
+plotResiduals(proteobacteria.df$habitat, simOut$scaledResiduals)
+plotResiduals(proteobacteria.df$DistanceToEdge, simOut$scaledResiduals) # not normally distributed, better since log(DistanceToEdge)
+
+testResiduals(simOut) # dispersion test is histogram
+```
+
+## Firmicutes
+
+Boxplot subset to exclude samples with Firtmicutes abundance >20000 as it was compressing plot.
+* Adult conifer samples seem to have extremely low median value.
+
+```{r}
+ggplot(firmicutes.df, aes(ageBinned, Abundance, color=habitat)) +
+  geom_boxplot() +
+  ggtitle("Firmicutes abundance") +
+  coord_cartesian(ylim=c(0,100000)) # limits axis without dropping observations
+```
+
+```{r}
+levels(firmicutes.df$ageBinned) # verify: 1week,2week,adult
+#assigning the backward difference coding to ageBinned
+contrasts(firmicutes.df$ageBinned) = my.backward.diff
+```
+
+Firmicutes binomial model
+* full model doesnt converge
+* age\*Distance*habitat does converge BUT residuals poor
+* individual variable residual plots look ok
+```{r Binomial model- Firmicutes}
+binomial.response <- cbind(firmicutes.df$Abundance,firmicutes.df$NumberOfReads-firmicutes.df$Abundance)
+
+#all.fir <- glmer(binomial.response ~ ageBinned * habitat + I(DistanceToEdge^(1/2)) + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = firmicutes.df) # singular fit
+#firmicutes.df$habitat <- relevel(firmicutes.df$habitat, "deciduous")
+
+all.fir <- glmer(binomial.response ~  ageBinned*DistanceToEdge*habitat + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = firmicutes.df) # fits well
+
+#all.fir <- glmer(binomial.response ~  ageBinned * habitat * layDateFirst + ageBinned * broodSizeWhenSampled + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = firmicutes.df, control=glmerControl(optimizer = "bobyqa",optCtrl=list(maxfun=200000))) 
+
+summary(all.fir)
+```
+
+```{r, plot all.fir model w/ effects pkg}
+plot(effect("ageBinned:habitat", all.fir))
+```
+
+Plot residuals w/ DHARMa instead of standard plot.
+```{r}
+simOut <- simulateResiduals(all.fir, n = 1000)
+plot(simOut)
+```
+```{r, eval=FALSE}
+plotResiduals(firmicutes.df$ageBinned, simOut$scaledResiduals)
+plotResiduals(firmicutes.df$habitat, simOut$scaledResiduals)
+plotResiduals(firmicutes.df$DistanceToEdge, simOut$scaledResiduals) 
+
+#testResiduals(simOut) # causes error
+#testDispersion(simOut)
+```
+
+## Bacteroidetes
+
+Boxplot of bacteroidetes.
+
+```{r}
+ggplot(bacteroidetes.df, aes(ageBinned, Abundance, color=habitat)) +
+  geom_boxplot() +
+  ggtitle("Bacteriodetes abundance") +
+  coord_cartesian(ylim=c(0,20000)) # limits axis without dropping observations
+```
+
+```{r}
+levels(bacteroidetes.df$ageBinned) # verify: 1week,2week,adult
+#assigning the backward difference coding to ageBinned
+contrasts(bacteroidetes.df$ageBinned) = my.backward.diff
+```
+
+Bacteroidetes binomial model
+* full model fails to converge
+* age\*Distance*habitat converges BUT residuals not great: deviation significant
+
+```{r Binomial model- Bacteroidetes}
+binomial.response <- cbind(bacteroidetes.df$Abundance,bacteroidetes.df$NumberOfReads-bacteroidetes.df$Abundance)
+
+all.bac <- glmer(binomial.response ~ ageBinned*DistanceToEdge*habitat + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = bacteroidetes.df)
+
+summary(all.bac)
+```
+
+```{r, eval=FALSE}
+plot(all.bac)
+```
+
+Plot residuals w/ DHARMa instead of standard plot.
+```{r}
+simOut <- simulateResiduals(all.bac, n = 1000)
+plot(simOut)
+```
+
+
+```{r}
+plotResiduals(bacteroidetes.df$ageBinned, simOut$scaledResiduals)
+plotResiduals(bacteroidetes.df$habitat, simOut$scaledResiduals)
+plotResiduals(bacteroidetes.df$DistanceToEdge, simOut$scaledResiduals) 
+
+testResiduals(simOut)
+testDispersion(simOut)
+```
+
+## Tenericutes
+ Should i model Tenericutes as presence absence instead of abundance as there will be many zero-abundance samples? Or will abundance models contain the same info?
+ 
+```{r}
+hist(tenericutes.df$Abundance, breaks = 100)
+```
+
+```{r}
+
+ggplot(tenericutes.df, aes(ageBinned, Abundance, color=habitat)) +
+  geom_boxplot() +
+  ggtitle("Tenericutes abundance") +
+  coord_cartesian(ylim = c(0,30000))
+
+ggplot(tenericutes.df, aes(ageBinned, Abundance, color=habitat)) +
+  geom_boxplot() +
+  ggtitle("Tenericutes abundance") +
+  coord_cartesian(ylim = c(0,1000))
+```
+
+Modelling attempts
+* First model has successe/failures like previous models. Gives Singular fit. Everything significant- bad model. Should try presence absence response instead.
+* Presence/Absence response fails to converge. Tried w/ and w/o interaction. Cut-off arbitrarily selected is 100
+* Lowered presence/absence cut-off to 50. Singular fit but everything no longer significant. Looks much better. ageBinned-2week and adult significant.
+*  Cut-off arbitrarily selected is 25. Still gives Singular fit. Only ageBinned-adult significant.
+* How to evaluate model residuals when reponse is 0/1
+* droppping site random effect gets rid of singular warning
+
+* tried interaction but model fails to converge.
+```{r Binomial model- Tenericutes}
+binomial.response <- cbind(tenericutes.df$Abundance,tenericutes.df$NumberOfReads-tenericutes.df$Abundance)
+
+# create presence/absence response
+## few actual zeroes but likely really low abundance values are sequencing errors or biologically irrelevant. How to decide cut-off? Will arbitrarily set at 100
+
+# presence.absence.cutoff <- 50
+# binomial.response <- cbind(tenericutes.df$Abundance,tenericutes.df$NumberOfReads-tenericutes.df$Abundance)
+# binomial.response[,1] <- sapply(binomial.response[,1], function(x) ifelse(x>presence.absence.cutoff, x <- 1, x <- 0))
+# binomial.response[,2] <- sapply(binomial.response[,1], function(x) ifelse(x==1, x <- 0, x <- 1))
+
+# model
+all.ten <- glmer(binomial.response ~ ageBinned + habitat + DistanceToEdge + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = tenericutes.df)
+summary(all.ten)
+```
+
+```{r}
+plot(all.ten)
+
+## 
+ggplot(all.ten, aes(fitted(all.ten), resid(all.ten, "pearson"))) +
+  geom_point() + 
+  geom_smooth(method = "loess") 
+
+```
+
+Plot residuals w/ DHARMa instead of standard plot. Deviation present with abundance data but not w/ 0/1 data.
+```{r}
+simOut <- simulateResiduals(all.ten, n = 1000)
+plot(simOut)
+
+testResiduals(simOut)
+```
+
+```{r}
+plotResiduals(metadata$ageBinned, simOut$scaledResiduals, quantreg = T)
+```
+## Actinobacteria
+
+```{r}
+ggplot(actinobacteria.df, aes(ageBinned, Abundance, color=habitat)) +
+  geom_boxplot() +
+  ggtitle("Actinobacteria abundance- ylimited") +
+  coord_cartesian(ylim=c(0,10000))
+```
+
+* Age 2week and 2week-habitat is significant
+* Added individual level random effect and removed broodSizeMax and layDate now residuals look much better and deviation no longer significant
+```{r}
+binomial.response <- cbind(actinobacteria.df$Abundance,actinobacteria.df$NumberOfReads-actinobacteria.df$Abundance)
+all.act <- glmer(binomial.response ~ ageBinned * habitat + DistanceToEdge + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = actinobacteria.df)
+summary(all.act)
+```
+
+```{r}
+simOut <- simulateResiduals(all.act, n = 1000)
+plot(simOut)
+```
+
+# Adult birds
+
+Create adult only df for each phyla.
+```{r Adult only df}
+proteobacteria.df.adult <- proteobacteria.df[proteobacteria.df$ageBinned=="adult",] 
+firmicutes.df.adult <- firmicutes.df[firmicutes.df$ageBinned=="adult",]
+tenericutes.df.adult <- tenericutes.df[tenericutes.df$ageBinned=="adult",] %>% 
+  'rownames<-'(.$BIOM.ID)
+bacteroidetes.df.adult <- bacteroidetes.df[bacteroidetes.df$ageBinned=="adult",]
+actinobacteria.df.adult <- actinobacteria.df[actinobacteria.df$ageBinned=="adult",] %>% 'rownames<-'(.$BIOM.ID)
+```
+
+## Proteobacteria adult
+
+Boxplot of sex-habitat for proteobacteria.
+* Note: only 4 coniferous males, 3 coniferous females
+```{r}
+ggplot(proteobacteria.df.adult, aes(Sex, Abundance, color=habitat)) +
+  geom_boxplot() +
+  ggtitle("Proteobacteria abundance")
+```
+
+Proteobacteria adult model
+
+* Full model (mirror of alpha-div model) converges
+* residuals poor (residual vs fitted)
+* added Sex interaction with habitat*laydate as seems like it would be important and residuals improve
+
+```{r}
+#proteobacteria.df.adult <- proteobacteria.df.adult[!proteobacteria.df.adult$BIOM.ID=="SP7M.S10",] # extreme outlier for distance
+binomial.response <- cbind(proteobacteria.df.adult$Abundance,proteobacteria.df.adult$NumberOfReads-proteobacteria.df.adult$Abundance)
+
+adu.pro <- glmer(binomial.response ~ Sex * habitat * broodSizeWhenSampled + habitat * layDateFirst * Sex + habitat * DistanceToEdge + (1|site/nest) + (1|SequencePlate), family= binomial, data = proteobacteria.df.adult) # singular fit
+
+summary(adu.pro)
+```
+
+```{r}
+simOut <- simulateResiduals(adu.pro, n = 1000)
+plot(simOut)
+```
+
+Check partial residuals
+
+* one extreme outlier for DistanceToEdge (SP7M.S10)
+```{r}
+plotResiduals(adu.pro@frame$Sex, simOut$scaledResiduals) # fine
+plotResiduals(adu.pro@frame$habitat, simOut$scaledResiduals) # fine
+plotResiduals(adu.pro@frame$DistanceToEdge, simOut$scaledResiduals) # not normal, prob due to outlier
+plotResiduals(adu.pro@frame$layDateFirst, simOut$scaledResiduals) # ok
+plotResiduals(adu.pro@frame$broodSizeWhenSampled, simOut$scaledResiduals) # not normal
+
+testResiduals(simOut) # dispersion test is histogram
+```
+## Firmicutes adult
+
+```{r}
+ggplot(firmicutes.df.adult, aes(Sex, Abundance, color=habitat)) +
+  geom_boxplot() +
+  ggtitle("Firmicutes abundance: Adult")
+```
+Firmicutes model adult
+
+* fails to converge, residuals poor
+* added sex interaction with habitat*laydate but model still fails to converge
+* increased iterations but model still fails to converge
+
+* gradually removed vairables until model converged with sex*habitat interaction
+* residuals still poor
+
+```{r}
+#firmicutes.df.adult <- subset(firmicutes.df.adult, !BIOM.ID=="SP7M.S10")
+binomial.response <- cbind(firmicutes.df.adult$Abundance,firmicutes.df.adult$NumberOfReads-firmicutes.df.adult$Abundance)
+
+adu.fir <- glmer(binomial.response ~  Sex * habitat + (1|site/nest) + (1|SequencePlate), family= binomial, data = firmicutes.df.adult, control=glmerControl(optCtrl=list(maxfun=200000)))
+
+summary(adu.fir)
+```
+
+
+```{r}
+simOut <- simulateResiduals(adu.fir, n = 1000)
+plot(simOut)
+```
+
+```{r}
+plotResiduals(adu.fir@frame$Sex, simOut$scaledResiduals) # normal
+plotResiduals(adu.fir@frame$habitat, simOut$scaledResiduals) # normal
+plotResiduals(adu.fir@frame$DistanceToEdge, simOut$scaledResiduals) # not normal
+plotResiduals(adu.fir@frame$layDateFirst, simOut$scaledResiduals) # pretty normal
+plotResiduals(adu.fir@frame$broodSizeWhenSampled, simOut$scaledResiduals) # pretty normal
+```
+
+## Bacteroidetes adult
+
+```{r}
+ggplot(bacteroidetes.df.adult, aes(Sex, Abundance, color=habitat)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Bacteroidetes abundance: Adult") +
+  coord_cartesian(ylim=c(0,10000)) # limits axis without dropping observations
+```
+
+Bacteroidetes model adult
+* Singular fit, site has zero variance
+* converges but residuals vs predicted poor
+
+```{r}
+binomial.response <- cbind(bacteroidetes.df.adult$Abundance,bacteroidetes.df.adult$NumberOfReads-bacteroidetes.df.adult$Abundance)
+adu.bac <- glmer(binomial.response ~  Sex * habitat * broodSizeWhenSampled + habitat * layDateFirst + habitat * DistanceToEdge + (1|site/nest) + (1|SequencePlate), family= binomial, data = bacteroidetes.df.adult) # singular fit
+summary(adu.bac)
+```
+
+```{r, eval=FALSE}
+plot(adu.bac)
+```
+
+```{r}
+simOut <- simulateResiduals(adu.bac, n = 1000)
+plot(simOut)
+```
+
+```{r}
+plotResiduals(adu.bac@frame$Sex, simOut$scaledResiduals) # very different medians
+plotResiduals(adu.bac@frame$habitat, simOut$scaledResiduals) # ok
+plotResiduals(adu.bac@frame$DistanceToEdge, simOut$scaledResiduals) # not normal
+plotResiduals(adu.bac@frame$layDateFirst, simOut$scaledResiduals) # not normal
+plotResiduals(adu.bac@frame$clutchSize, simOut$scaledResiduals) # not normal
+```
+
+## Tenericutes adult
+
+```{r}
+ggplot(tenericutes.df.adult, aes(Sex, Abundance, color=habitat)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Tenericutes abundance: Adult")# +
+  #coord_cartesian(ylim=c(0,20000)) # limits axis without dropping observations
+```
+
+Tenericutes adult model
+* sex + habitat both significant
+* Sex * habitat interaction neither significant
+* Maximal model (Sex * habitat + DistanceToEdge + layDateFirst + broodSizeMax) nothing significant, fails to converge
+* maximal model w/o interaction nothing significant, fails to converge, tried rescaling minimal difference
+
+*used clutchSize instead of broodSize and model now converges*
+*simulated residuals look good*
+* model doesnt converge w/o sex*habitat interaction
+* singular fit due to sites low variance
+```{r Binomial adult model- Tenericutes}
+binomial.response <- cbind(tenericutes.df.adult$Abundance,tenericutes.df.adult$NumberOfReads-tenericutes.df.adult$Abundance)
+
+# create presence/absence response
+## few actual zeroes but likely really low abundance values are sequencing errors or biologically irrelevant. How to decide cut-off? Will arbitrarily set at 100
+
+# presence.absence.cutoff <- 50
+# binomial.response <- cbind(tenericutes.df.adult$Abundance,tenericutes.df.adult$NumberOfReads-tenericutes.df.adult$Abundance)
+# binomial.response[,1] <- sapply(binomial.response[,1], function(x) ifelse(x>presence.absence.cutoff, x <- 1, x <- 0))
+# binomial.response[,2] <- sapply(binomial.response[,1], function(x) ifelse(x==1, x <- 0, x <- 1))
+
+# model
+adu.ten <- glmer(binomial.response ~   Sex + habitat + (DistanceToEdge) + (layDateFirst) + (clutchSize) + (1|site/nest) + (1|SequencePlate), family= binomial, data = tenericutes.df.adult)
+
+summary(adu.ten)
+```
+
+
+```{r}
+plot(adu.ten)
+
+## 
+ggplot(adu.ten@frame, aes(fitted(adu.ten), resid(adu.ten, "pearson"))) +
+  geom_point() + 
+  geom_smooth(method = "loess") 
+```
+
+Plot residuals w/ DHARMa instead of standard plot. Deviation present with abundance data but not w/ 0/1 data.
+```{r}
+simOut <- simulateResiduals(adu.ten, n = 1000)
+plot(simOut)
+
+testResiduals(simOut)
+```
+
+```{r}
+plotResiduals(adu.ten@frame$Sex, simOut$scaledResiduals) # normal
+plotResiduals(adu.ten@frame$habitat, simOut$scaledResiduals) # not normal
+plotResiduals(adu.ten@frame$DistanceToEdge, simOut$scaledResiduals) # not normal, one big outlier
+plotResiduals(adu.ten@frame$layDateFirst, simOut$scaledResiduals) # near normal
+plotResiduals(adu.ten@frame$clutchSize, simOut$scaledResiduals) # not normal
+```
+
+## Actinobacteria adult
+
+```{r}
+ggplot(actinobacteria.df.adult, aes(Sex, Abundance, color=habitat)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Actinobacteria abundance: Adult (ylimited)") +
+  coord_cartesian(ylim=c(0,10000)) # limits axis without dropping observations
+```
+
+Actinobacteria adult model
+* Singular fit, site has zero variance
+* sex significant
+* Sex*habitat interaction significant
+* Residual vs predicted, lines look ok
+
+```{r}
+binomial.response <- cbind(actinobacteria.df.adult$Abundance,actinobacteria.df.adult$NumberOfReads-actinobacteria.df.adult$Abundance)
+adu.act <- glmer(binomial.response ~ Sex * habitat + DistanceToEdge + layDateFirst + clutchSize + (1|site/nest) + (1|SequencePlate), family= binomial, data = actinobacteria.df.adult)
+summary(adu.act)
+```
+
+```{r}
+simOut <- simulateResiduals(adu.act, n = 1000)
+plot(simOut)
+```
+
+```{r}
+plotResiduals(adu.act@frame$Sex, simOut$scaledResiduals) # normal
+plotResiduals(adu.act@frame$habitat, simOut$scaledResiduals) # mostly normal, medians a bit different
+plotResiduals(adu.act@frame$DistanceToEdge, simOut$scaledResiduals) # not normal
+plotResiduals(adu.act@frame$layDateFirst, simOut$scaledResiduals) # ok
+plotResiduals(adu.act@frame$clutchSize, simOut$scaledResiduals) # ok
+```
+
+# Nestlings
+
+Create nestling only dfs.
+```{r}
+proteobacteria.df.chick <- proteobacteria.df[proteobacteria.df$ageBinned %in% c("1week","2week"),] 
+firmicutes.df.chick <- firmicutes.df[firmicutes.df$ageBinned %in% c("1week","2week"),]
+tenericutes.df.chick <- tenericutes.df[tenericutes.df$ageBinned %in% c("1week","2week"),] %>% 
+  'rownames<-'(.$BIOM.ID)
+bacteroidetes.df.chick <- bacteroidetes.df[bacteroidetes.df$ageBinned %in% c("1week","2week"),]
+actinobacteria.df.chick <- actinobacteria.df[actinobacteria.df$ageBinned %in% c("1week","2week"),]
+```
+
+## Proteobacteria nestling
+
+```{r}
+ggplot(proteobacteria.df.chick, aes(ageBinned, Abundance, color=habitat)) +
+  geom_boxplot() +
+  ggtitle("Proteobacteria abundance: Nestling") #+
+  #coord_cartesian(ylim=c(0,20000)) # limits axis without dropping observations
+```
+
+Proteobacteria model- nestlings
+
+* age significant
+* age*habitat interaction significant
+* Distance almost significant
+
+* Swapping broodSizeMax for broodSizeWhen Sampled leads to: *Model nearly unidentifiable warning*
+* broodSizeSampled is significant
+* Residuals look much better
+
+* using nAGQ = 0 argument gets rid of warning
+* removing broodSizeWhen also gets rid of warning- partial residual plots make it look like BSWhen not scaled (possibly all discrete variables will be plotted like this?)
+
+```{r}
+binomial.response <- cbind(proteobacteria.df.chick$Abundance,proteobacteria.df.chick$NumberOfReads-proteobacteria.df.chick$Abundance)
+chick.pro <- glmer(binomial.response ~ ageBinned * habitat + DistanceToEdge + layDateFirst + broodSizeWhenSampled + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = proteobacteria.df.chick) #, nAGQ = 0)
+summary(chick.pro)
+```
+
+```{r}
+simOut <- simulateResiduals(chick.pro, n = 1000)
+plot(simOut)
+```
+
+```{r}
+plotResiduals(chick.pro@frame$ageBinned, simOut$scaledResiduals) # fine
+plotResiduals(chick.pro@frame$habitat, simOut$scaledResiduals) # fine
+plotResiduals(chick.pro@frame$DistanceToEdge, simOut$scaledResiduals) # n-shape
+plotResiduals(chick.pro@frame$layDateFirst, simOut$scaledResiduals) # fine
+#plotResiduals(chick.pro@frame$broodSizeMax, simOut$scaledResiduals) # n-shape
+plotResiduals(chick.pro@frame$broodSizeWhenSampled, simOut$scaledResiduals) # m-shape
+```
+
+## Firmicutes nestling
+
+```{r}
+ggplot(firmicutes.df.chick, aes(ageBinned, Abundance, color=habitat)) +
+  geom_boxplot() +
+  ggtitle("Firmicutes abundance: Nestling (ylimited)") +
+  coord_cartesian(ylim=c(0,200000)) # limits axis without dropping observations
+```
+
+* Swapping in broodSizeWhenSampled gives *model nearly unidentifiable warning*
+* broodSizeWhen is significant
+* residuals look slightly worse
+
+* Dropping broodSize makes residuals worse and outlier deviation significant
+```{r}
+binomial.response <- cbind(firmicutes.df.chick$Abundance,firmicutes.df.chick$NumberOfReads-firmicutes.df.chick$Abundance)
+chick.fir <- glmer(binomial.response ~  ageBinned * habitat + DistanceToEdge + layDateFirst + broodSizeWhenSampled + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = firmicutes.df.chick)
+summary(chick.fir)
+```
+
+```{r}
+simOut <- simulateResiduals(chick.fir, n = 1000)
+plot(simOut)
+```
+
+```{r}
+plotResiduals(chick.fir@frame$ageBinned, simOut$scaledResiduals) #fine
+plotResiduals(chick.fir@frame$habitat, simOut$scaledResiduals) # fine
+plotResiduals(chick.fir@frame$DistanceToEdge, simOut$scaledResiduals) # not great 
+plotResiduals(chick.fir@frame$layDateFirst, simOut$scaledResiduals) # ok
+#plotResiduals(chick.fir@frame$broodSizeMax, simOut$scaledResiduals) # not great
+plotResiduals(chick.fir@frame$broodSizeWhenSampled, simOut$scaledResiduals) # w-shape
+```
+
+## Bacteroidetes nestling
+
+```{r}
+ggplot(bacteroidetes.df.chick, aes(ageBinned, Abundance, color=habitat)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Bacteroidetes abundance: Nestling (ylimited)") +
+  coord_cartesian(ylim=c(0,20000)) # limits axis without dropping observations
+```
+
+* age is significant
+* age*habitat interaction significant
+* dropping broodSizeMax makes residuals slightly worse
+* Swapping broodSizeWhen in for BSMax
+* BSWhen is significant
+* Residuals vs predicted, lines look good
+
+```{r}
+binomial.response <- cbind(bacteroidetes.df.chick$Abundance,bacteroidetes.df.chick$NumberOfReads-bacteroidetes.df.chick$Abundance)
+chick.bac <- glmer(binomial.response ~  ageBinned * habitat + DistanceToEdge + layDateFirst + broodSizeWhenSampled + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = bacteroidetes.df.chick)
+summary(chick.bac)
+```
+
+```{r}
+simOut <- simulateResiduals(chick.bac, n = 1000)
+plot(simOut)
+```
+
+```{r}
+plotResiduals(chick.bac@frame$ageBinned, simOut$scaledResiduals) # fine
+plotResiduals(chick.bac@frame$habitat, simOut$scaledResiduals) # fine
+plotResiduals(chick.bac@frame$DistanceToEdge, simOut$scaledResiduals) # n-shape
+plotResiduals(chick.bac@frame$layDateFirst, simOut$scaledResiduals) # ok
+plotResiduals(chick.bac@frame$broodSizeWhenSampled, simOut$scaledResiduals) # 
+```
+
+## Tenericutes nestling
+
+```{r}
+ggplot(tenericutes.df.chick, aes(ageBinned, Abundance, color=habitat)) +
+  geom_boxplot() +
+  ggtitle("Tenericutes abundance: Nestling (ylimited)") +
+  coord_cartesian(ylim=c(0,50000)) # limits axis without dropping observations
+```
+```{r}
+tenericutes.df.chick$Abundance
+hist(tenericutes.df.chick$Abundance, breaks = 100)
+```
+
+* Added interaction between age and habitat and model residuals improved
+* Swapping in broodSizeWhen makes residuals much better and all variables go from significant to non-significant
+* *Model fails to converge*
+* Residuals look good, irrelevant if non-convergent?
+* tried removing site RE (low variance) but model still doesnt converge
+* tried adding scaled.mass variable, got singular fit warning + variance-covariance matrix warning
+* dropping BS and lay date does not help convergence
+* changing presence/absence cut-off to 5 gets rid of warning
+```{r}
+binomial.response <- cbind(tenericutes.df.chick$Abundance,tenericutes.df.chick$NumberOfReads-tenericutes.df.chick$Abundance)
+
+# create presence/absence response
+## few actual zeroes but likely really low abundance values are sequencing errors or biologically irrelevant. How to decide cut-off? Will arbitrarily set at 100
+
+# presence.absence.cutoff <- 5
+# binomial.response <- cbind(tenericutes.df.chick$Abundance,tenericutes.df.chick$NumberOfReads-tenericutes.df.chick$Abundance)
+# binomial.response[,1] <- sapply(binomial.response[,1], function(x) ifelse(x>presence.absence.cutoff, x <- 1, x <- 0))
+# binomial.response[,2] <- sapply(binomial.response[,1], function(x) ifelse(x==1, x <- 0, x <- 1))
+
+# model
+chick.ten <- glmer(binomial.response ~   ageBinned * habitat + (DistanceToEdge) + (layDateFirst) + (broodSizeWhenSampled) + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = tenericutes.df.chick)
+#vif(chick.ten)
+
+summary(chick.ten)
+```
+
+```{r}
+simOut <- simulateResiduals(chick.ten, n = 1000)
+plot(simOut)
+```
+
+```{r}
+plotResiduals(chick.ten@frame$ageBinned, simOut$scaledResiduals) # ok
+plotResiduals(chick.ten@frame$habitat, simOut$scaledResiduals) # fine
+plotResiduals(chick.ten@frame$DistanceToEdge, simOut$scaledResiduals) # u-shape
+plotResiduals(chick.ten@frame$layDateFirst, simOut$scaledResiduals) # fine
+plotResiduals(chick.ten@frame$broodSizeWhenSampled, simOut$scaledResiduals) # bad for low and high values
+```
+
+## Actinobacteria nestling
+
+```{r}
+ggplot(actinobacteria.df.chick, aes(ageBinned, Abundance, color=habitat)) +
+  geom_boxplot() +
+  ggtitle("Actinobacteria abundance: Nestling (ylimited)") +
+  coord_cartesian(ylim=c(0,10000)) # limits axis without dropping observations
+```
+
+* age significant
+* age*habitat interaction significant
+* Swapping broodSizeWhen in improves residuals
+* BSWhen is significant
+* residuals vs predicted, lines look ok
+```{r}
+binomial.response <- cbind(actinobacteria.df.chick$Abundance,actinobacteria.df.chick$NumberOfReads-actinobacteria.df.chick$Abundance)
+chick.act <- glmer(binomial.response ~  ageBinned * habitat + DistanceToEdge + layDateFirst + broodSizeWhenSampled + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = actinobacteria.df.chick)
+summary(chick.act)
+```
+
+```{r}
+simOut <- simulateResiduals(chick.act, n = 1000)
+plot(simOut)
+```
+
+Partial residuals
+```{r}
+plotResiduals(chick.act@frame$ageBinned, simOut$scaledResiduals) # fine
+plotResiduals(chick.act@frame$habitat, simOut$scaledResiduals) # fine
+plotResiduals(chick.act@frame$DistanceToEdge, simOut$scaledResiduals) # n-shape
+plotResiduals(chick.act@frame$layDateFirst, simOut$scaledResiduals) # fine
+plotResiduals(chick.act@frame$broodSizeWhenSampled, simOut$scaledResiduals) # bad
+```
+
+# Plots
+
+```{r}
+## summarySE provides the standard deviation, standard error of the mean, and a (default 95%) confidence interval
+summ.meta <- summarySE(proteobacteria.df, measurevar="Abundance", groupvars=c("habitat","ageBinned"))
+
+summ.meta <- summ.meta %>% dplyr::rename("Habitat"="habitat")
+
+pd <- position_dodge2(padding = 0.1, width = 0.1)
+
+# make simple graph from which to take legend 
+g0 <- ggplot(summ.meta, aes(x=ageBinned, y=Abundance, colour=Habitat)) + 
+    geom_errorbar(aes(ymin=Abundance-se, ymax=Abundance+se), width=.1,position=pd) +
+    geom_line(position=pd) +
+    geom_point(position=pd, size=3)
+
+g1 <- ggplot(summ.meta, aes(x=ageBinned, y=Abundance, colour=Habitat)) + 
+    geom_errorbar(aes(ymin=Abundance-se, ymax=Abundance+se), width=.1,position=pd) +
+    geom_line(position=pd) +
+    geom_point(position=pd, size=3) +
+    xlab("Age") +
+    scale_x_discrete(labels=c("1week"="D8", "2week"="D15", "adult"="Adult")) +
+    theme_pubr(base_size = 15) +
+    theme(axis.title = element_text(face="bold")) 
+
+g1
+## geting warning about "one obs." because i am just feeding it the summary stats directly, rather than the raw data
+```
+
+```{r}
+## summarySE provides the standard deviation, standard error of the mean, and a (default 95%) confidence interval
+summ.meta <- summarySE(firmicutes.df, measurevar="Abundance", groupvars=c("habitat","ageBinned"))
+
+summ.meta <- summ.meta %>% dplyr::rename("Habitat"="habitat")
+
+pd <- position_dodge2(padding = 0.1, width = 0.1)
+
+g2 <- ggplot(summ.meta, aes(x=ageBinned, y=Abundance, colour=Habitat)) + 
+    geom_errorbar(aes(ymin=Abundance-se, ymax=Abundance+se), width=.1,position=pd) +
+    geom_line(position=pd) +
+    geom_point(position=pd, size=3)+
+    xlab("Age") +
+    scale_x_discrete(labels=c("1week"="D8", "2week"="D15", "adult"="Adult")) +
+    theme_pubr(base_size = 15) +
+    theme(axis.title = element_text(face="bold")) 
+
+g2
+## geting warning about "one obs." because i am just feeding it the summary stats directly, rather than the raw data
+```
+
+```{r}
+## summarySE provides the standard deviation, standard error of the mean, and a (default 95%) confidence interval
+summ.meta <- summarySE(proteobacteria.df.adult, measurevar="Abundance", groupvars=c("habitat","Sex"))
+
+pd <- position_dodge2(padding = 0.1, width = 0.1)
+
+g3 <- ggplot(summ.meta, aes(x=Sex, y=Abundance, colour=habitat)) + 
+    geom_errorbar(aes(ymin=Abundance-se, ymax=Abundance+se), width=.1,position=pd) +
+    geom_line(position=pd) +
+    geom_point(position=pd, size=3)+
+    theme_pubr(base_size = 15) +
+    theme(axis.title = element_text(face="bold")) 
+
+g3
+## geting warning about "one obs." because i am just feeding it the summary stats directly, rather than the raw data
+```
+
+```{r}
+## summarySE provides the standard deviation, standard error of the mean, and a (default 95%) confidence interval
+summ.meta <- summarySE(firmicutes.df.adult, measurevar="Abundance", groupvars=c("habitat","Sex"))
+
+pd <- position_dodge2(padding = 0.1, width = 0.1)
+
+g4 <- ggplot(summ.meta, aes(x=Sex, y=Abundance, colour=habitat)) + 
+    geom_errorbar(aes(ymin=Abundance-se, ymax=Abundance+se), width=.1,position=pd) +
+    geom_line(position=pd) +
+    geom_point(position=pd, size=3)+
+    theme_pubr(base_size = 15) +
+    theme(axis.title = element_text(face="bold")) 
+
+g4
+## geting warning about "one obs." because i am just feeding it the summary stats directly, rather than the raw data
+```
+
+```{r}
+library(cowplot)
+
+gridplot <- plot_grid((g1+ theme(legend.position="none")) %>% annotate_figure(, top = text_grob("Proteobacteria", face = "bold")),
+          (g2 + theme(legend.position="none")) %>% annotate_figure(, top = text_grob("Firmicutes", face = "bold")),
+          g3 + theme(legend.position="none"),
+          g4 + theme(legend.position="none"),
+          nrow = 2, ncol = 2, labels = "auto")
+
+gridplot.legend <- get_legend(g0)
+
+plot4x4 <- plot_grid(gridplot, gridplot.legend, rel_widths = c(2,.3))
+
+plot4x4
+```
+
+```{r}
+library(cowplot)
+
+g0 <- g0 + theme(text = element_text(size = 20))
+g1 <- g1 + theme(text = element_text(size = 20))
+g2 <- g2 + theme(text = element_text(size = 20), axis.title.y = element_blank())
+
+
+plot2x2 <- plot_grid((g1+ theme(legend.position="none")) %>% annotate_figure(, top = text_grob("Proteobacteria", face = "bold", size = 20)),
+          (g2 + theme(legend.position="none")) %>% annotate_figure(, top = text_grob("Firmicutes", face = "bold", size = 20)),
+          nrow = 1, ncol = 2)  #, labels = "auto"
+  
+gridplot.legend <- get_legend(g0 +
+    guides(color = guide_legend(nrow = 1)) +
+    theme(legend.position = "top"))
+#gridplot.legend <- get_legend(g0)
+
+plot2x2_legend <- plot_grid(gridplot.legend, plot2x2, ncol=1, rel_heights = c(.1,1))
+
+plot2x2_legend
+```
+# Results
+
+Add actinobacteria to results
+
+```{r Separate Results kable, message=FALSE, echo=FALSE}
+# make df of results
+# then call kable(df.results)
+# all.sh.lmm, all.chao.lmm, ad.sh.lmm, ad.chao.lmm
+sum.all.pro <- summary(all.pro)[["coefficients"]]
+sum.all.fir <- summary(all.fir)[["coefficients"]]
+#sum.all.bac <- summary(all.bac)[["coefficients"]]
+#sum.all.ten <- summary(all.ten)[["coefficients"]]
+#sum.all.act <- summary(all.act)[["coefficients"]]
+
+#make df of lmer output
+# removed: , sum.all.bac, sum.all.ten, sum.all.act
+adiv.summary.df <- as_tibble(rbind(sum.all.pro, sum.all.fir), rownames="Dependent/Independent variable") %>% 
+  rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate))
+
+# make df into kable
+## this is in html, doesnt render in word doc, need to copy + paste from html to word
+kable(adiv.summary.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  group_rows("(a) All Proteobacteria",1,12) %>% 
+  group_rows("(b) All Firmicutes",13,24) %>%
+  kable_styling(full_width = F)
+```
+
+```{r}
+sum.adu.pro <- summary(adu.pro)[["coefficients"]]
+sum.adu.fir <- summary(adu.fir)[["coefficients"]]
+#sum.adu.bac <- summary(adu.bac)[["coefficients"]]
+#sum.adu.ten <- summary(adu.ten)[["coefficients"]]
+#sum.adu.act <- summary(adu.act)[["coefficients"]]
+
+
+#make df of lmer output
+# removed: , sum.adu.bac, sum.adu.ten, sum.adu.act
+adiv.summary.df.adult <- as_tibble(rbind(sum.adu.pro, sum.adu.fir), rownames="Dependent/Independent variable") %>% 
+  rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate))
+
+# make df into kable
+## this is in html, dosnt render in word doc
+kable(adiv.summary.df.adult, format = "html", table.attr = "style = \"color: black;\"") %>%
+  group_rows("(a) Adult Proteobacteria",1,14) %>%
+  group_rows("(b) Adult Firmicutes",15,18) %>%
+  kable_styling(full_width = F)
+```
+
+```{r}
+sum.chick.pro <- summary(chick.pro)[["coefficients"]]
+sum.chick.fir <- summary(chick.fir)[["coefficients"]]
+sum.chick.bac <- summary(chick.bac)[["coefficients"]]
+sum.chick.ten <- summary(chick.ten)[["coefficients"]]
+sum.chick.act <- summary(chick.act)[["coefficients"]]
+
+#make df of lmer output
+adiv.summary.df.chick <- as_tibble(rbind(sum.chick.pro, sum.chick.fir, sum.chick.bac, sum.chick.ten, sum.chick.act), rownames="Dependent/Independent variable") %>% 
+  rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate))
+
+# make df into kable
+## this is in html, dosnt render in word doc
+kable(adiv.summary.df.chick, format = "html") %>%
+  group_rows("(a) Chick Proteobacteria",1,7) %>%
+  group_rows("(b) Chick Firmicutes",8,14)%>%
+  group_rows("(c) Chick Bacteroidetes",15,21)%>%
+  group_rows("(d) Chick Tenericutes",22,28) %>%
+  group_rows("(d) Chick Actinobacteria",29,35) %>%
+
+  kable_styling(full_width = F)
+```
+

@@ -1,0 +1,98 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Understand results
+
+# Standardize
+
+What is happening with the habitat variable which following standardising is coded as (-0.793, 0.207) 
+
+Run code in 03b_modelAveraging_AlphaDiv up to and including standardise chunk
+* estimate for habitat is -0.9887422 in unstandardised model
+* estimate is 0.04296 in standarised model
+```{r}
+summary(stdz.model)
+```
+
+```{r}
+str(metadata)
+```
+
+```{r}
+str(stdz.model@frame)
+```
+
+Does ageBinned keep its BDC contrasts? Yes, looks like it
+```{r}
+contrasts(stdz.model@frame$ageBinned)
+```
+
+```{r}
+contrasts(metadata$habitat)
+contrasts(stdz.model@frame$habitat)
+```
+
+
+###################################################################
+Centring habitat
+```{r}
+metadata$habitat
+habitat.binary <- ifelse(metadata$habitat=="deciduous",1,0 )
+
+mean(habitat.binary) #!
+```
+
+###################################################################
+
+```{r}
+stdz.model <- standardize(all.sh.lmm, standardize.y = FALSE)#, binary.inputs = "0/1")#, unchanged = "habitat")#, binary.inputs = "0/1")
+summary(stdz.model)
+
+stdz.model@frame$c.habitat
+
+table(stdz.model@frame$c.habitat)
+
+```
+
+```{r}
+stdz.model <- standardize(all.sh.lmm, standardize.y = FALSE, unchanged = "habitat")#, binary.inputs = "0/1")#, unchanged = "habitat")#, binary.inputs = "0/1")
+summary(stdz.model)
+
+stdz.model@frame$habitat
+
+#table(stdz.model@frame$c.habitat)
+
+```
+
+```{r}
+stdz.model <- standardize(all.sh.lmm, standardize.y = FALSE, binary.inputs = "0/1")#, binary.inputs = "0/1")#, unchanged = "habitat")#, binary.inputs = "0/1")
+summary(stdz.model)
+
+stdz.model@frame$c.habitat
+
+#table(stdz.model@frame$c.habitat)
+
+```
+
+##############################################
+what does encoding habitat as factor do
+
+```{r}
+all.sh.lmm.factor <- all.sh.lmm
+all.sh.lmm.factor@frame$habitat <- as.factor(all.sh.lmm.factor@frame$habitat)
+
+str(all.sh.lmm.factor@frame$habitat)
+```
+
+```{r}
+stdz.model <- standardize(all.sh.lmm.factor, standardize.y = FALSE)#, binary.inputs = "0/1")#, unchanged = "habitat")#, binary.inputs = "0/1")
+summary(stdz.model)
+
+stdz.model@frame$c.habitat
+
+#table(stdz.model@frame$c.habitat)
+
+str(stdz.model@frame)
+```

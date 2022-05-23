@@ -1,0 +1,10 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Plot D8 alpha diversity against D15 alpha diversity and colourby individual to determine whether low repeatability is driven by low between or high within variability.
+
+Wilson 2018: Repeatability can be low because of (a) high within individual variation, or (b) low between individual variation.
+
+# get paired dataframe

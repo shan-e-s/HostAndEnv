@@ -1,0 +1,390 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+library(interactions)
+library(jtools)
+library(MuMIn)
+library(lme4)
+library(cowplot)
+library(ggplot2)
+```
+
+# Read in objects
+
+```{r}
+mot <- readRDS("../Data/05_melted.phyla.glom.rds")
+```
+
+```{r Split df by phyla}
+proteobacteria.df <- mot[mot$Phylum=="Proteobacteria",]
+firmicutes.df <- mot[mot$Phylum=="Firmicutes",]
+
+```
+
+Split df by phyla and subset to adults
+```{r }
+proteobacteria.adult.df <- mot[(mot$Phylum=="Proteobacteria" & mot$ageBinned=="adult"),]
+firmicutes.adult.df <- mot[(mot$Phylum=="Firmicutes" & mot$ageBinned=="adult"),]
+```
+
+Read in dredged objects
+```{r}
+model.set.proteo <- readRDS("../Data/dredgeSaves/model.set.proteo")
+model.set.firmicutes <- readRDS("../Data/dredgeSaves/model.set.firmicutes")
+model.set.proteo.adult <- readRDS("../Data/dredgeSaves/model.set.proteo.adult")
+model.set.firmicutes.adult <- readRDS(file = "../Data/dredgeSaves/model.set.firmicutes.adult")
+
+```
+
+Create objects for non-model averaged models
+* seems to fit model when extracting it: glmer package and binomial response variable required
+```{r}
+binomial.response <- cbind(proteobacteria.df$Abundance/proteobacteria.df$NumberOfReads)
+proteobacteria.model <- get.models(model.set.proteo, subset = 1)[[1]]
+
+binomial.response <- cbind(firmicutes.df$Abundance/firmicutes.df$NumberOfReads)
+firmicutes.model <- get.models(model.set.firmicutes, subset = 1)[[1]]
+
+```
+
+Adult top models
+```{r}
+binomial.response <- cbind(proteobacteria.adult.df$Abundance / proteobacteria.adult.df$NumberOfReads)
+top.models.pro.adult <- get.models(model.set.proteo.adult, subset = delta<2)
+
+binomial.response <- cbind(firmicutes.adult.df$Abundance / firmicutes.adult.df$NumberOfReads)
+top.models.fir.adult <- get.models(model.set.firmicutes.adult, subset = delta<2)
+```
+
+##############################################################################################
+##############################################################################################
+
+Camille's templates (for categorical plots)
+```{r}
+# NameOfYourPlotWithInteractions<-cat_plot(NameOfYourModel,pred=YourPredictorFromInteraction,modx=YourOtherPredictorFromInteraction,x.label="NAMEX", y.label="NAMEY
+# ",interval =TRUE,int.type = "confidence", partial.residuals = TRUE)
+# 
+# NameOfYourPlotWithOutInteractions<-effect_plot(NameOfYourModel,pred=YourPredictorOfInterest,x.label="Experimental Phase", y.label="Weighted
+# Eigenvector Centrality",interval =TRUE,int.type = "confidence",partial.residuals = TRUE)
+```
+
+
+# All birds
+## Age*habitat
+Not a model averaged result, only 1 model in top set
+
+Getting error in weighted mean default 
+* Solved by eliminating "data =" argument
+
+Why are some values of proteobacteria less than zero? Because "jitter" value was too low pushing points away from each other
+```{r}
+#check.df <- proteobacteria.model@frame
+
+proteobacteria.model@frame$c.habitat <- ifelse(proteobacteria.model@frame$c.habitat<0, "Conifer", "Deciduous")
+
+ageXhabitat.proteo.all<-cat_plot(proteobacteria.model, pred=ageBinned, modx=c.habitat, partial.residuals = TRUE, x.label="Age", y.label="Proteobacteria (relative abundance)", legend.main = "Habitat", pred.labels = c("Day 8", "Day 15", "Adult"), interval =TRUE, int.type = "confidence", jitter = 0.4, point.alpha = 0.2, point.size = 0.75)# data = proteobacteria.model@frame)
+
+ageXhabitat.proteo.all
+```
+
+```{r}
+#check.df <- proteobacteria.model@frame
+
+firmicutes.model@frame$c.habitat <- ifelse(firmicutes.model@frame$c.habitat<0, "Conifer", "Deciduous")
+
+ageXhabitat.firmic.all<-cat_plot(firmicutes.model, pred=ageBinned, modx=c.habitat, partial.residuals = TRUE, x.label="Age", y.label="Firmicutes (relative abundance)", legend.main = "Habitat", pred.labels = c("Day 8", "Day 15", "Adult"), interval =TRUE, int.type = "confidence", jitter = 0.4, point.alpha = 0.2, point.size = 0.75)# data = proteobacteria.model@frame)
+
+ageXhabitat.firmic.all
+```
+
+###################################################
+Re-read in these models because ifelse statement upstream, was upsetting the following plot codes
+```{r}
+binomial.response <- cbind(proteobacteria.df$Abundance/proteobacteria.df$NumberOfReads)
+proteobacteria.model <- get.models(model.set.proteo, subset = 1)[[1]]
+
+binomial.response <- cbind(firmicutes.df$Abundance/firmicutes.df$NumberOfReads)
+firmicutes.model <- get.models(model.set.firmicutes, subset = 1)[[1]]
+
+
+```
+###################################################
+## Age*broodSize
+
+Should i back-transform or "unstandardise" brood size for the plot?
+* can i just replace the standardised values in the model df with the actual values?
+
+Error contrasts can be applied only to factors with 2 or more levels
+* but above plot is identical and still works?
+* can replace with proteobacteria model frame in hacky fix
+* seems to be getting upset with some code around age*habitat plot as skipping age habitat plot code allows this to be plotted from fresh start
+```{r}
+#proteobacteria.model@frame$c.habitat <- ifelse(proteobacteria.model@frame$c.habitat<0, "conifer", "deciduous")
+
+broodSizeXage.proteo.all<- interact_plot(proteobacteria.model, pred=z.broodSizeWhenSampled, modx=ageBinned, partial.residuals = TRUE, x.label="Brood Size", y.label="Proteobacteria (relative abundance)", interval =TRUE, int.type = "confidence", legend.main = "Age", modx.labels = c("Day 8", "Day 15", "Adult"), point.size = 0.75) 
+
+broodSizeXage.proteo.all
+```
+
+```{r}
+# firmicutes.model.HACK <- firmicutes.model
+# firmicutes.model.HACK@frame <- proteobacteria.model@frame
+
+broodSizeXage.firmic.all <- interact_plot(firmicutes.model, pred=z.broodSizeWhenSampled, modx=ageBinned, partial.residuals = TRUE, x.label="Brood Size", y.label="Firmicutes (relative abundance)", interval =TRUE, int.type = "confidence", legend.main = "Age", modx.labels = c("Day 8", "Day 15", "Adult"), point.size = 0.75) # data = proteobacteria.model@frame)
+
+broodSizeXage.firmic.all
+```
+
+## Age*Distance
+```{r}
+distanceXage.proteo.all <- interact_plot(proteobacteria.model, pred=z.DistanceToEdge, modx=ageBinned, partial.residuals = TRUE, x.label="Distance to edge", y.label="Proteobacteria (relative abundance)", interval =TRUE, int.type = "confidence", legend.main = "Age", modx.labels = c("Day 8", "Day 15", "Adult"), point.size = 0.75)
+
+distanceXage.proteo.all
+```
+
+```{r}
+distanceXage.firmic.all <- interact_plot(firmicutes.model, pred=z.DistanceToEdge, modx=ageBinned, partial.residuals = TRUE, x.label="Distance to edge", y.label="Firmicutes (relative abundance)", interval =TRUE, int.type = "confidence", legend.main = "Age", modx.labels = c("Day 8", "Day 15", "Adult"), point.size = 0.75) 
+
+distanceXage.firmic.all
+```
+
+## age*layDate
+```{r}
+layDatexage.proteo.all <- interact_plot(proteobacteria.model, pred=z.layDateFirst, modx=ageBinned, partial.residuals = TRUE, x.label="Lay date", y.label="Proteobacteria (relative abundance)", interval =TRUE, int.type = "confidence", legend.main = "Age", modx.labels = c("Day 8", "Day 15", "Adult"), point.size = 0.75) 
+
+layDatexage.proteo.all
+```
+
+```{r}
+  
+layDateXage.firmic.all <- interact_plot(firmicutes.model, pred=z.layDateFirst, modx=ageBinned, partial.residuals = TRUE, x.label="Lay date", y.label="Firmicutes (relative abundance)", interval =TRUE, int.type = "confidence", legend.main = "Age", modx.labels = c("Day 8", "Day 15", "Adult"), point.size = 0.75) 
+
+layDateXage.firmic.all
+```
+
+# Adult birds
+## Lay date
+```{r}
+#top.adult.proteo <- get.models(model.set.proteo.adult, subset = delta<2)
+top.adult.proteo <- top.models.pro.adult[[1]]
+#top.adult.proteo@frame$z.layDateFirst <- ifelse(top.adult.proteo@frame$c.ageDays>0,"Juvenile", "Mature")
+
+layDate.proteo.adult<-effect_plot(top.adult.proteo, pred=z.layDateFirst, x.label="Lay date", y.label="Proteobacteria (relative abundance)", interval =TRUE, int.type = "confidence", partial.residuals = TRUE, jitter = 0.1, point.alpha = 0.2, point.size = 0.75)
+
+layDate.proteo.adult
+```
+
+```{r}
+#top.adult.proteo <- get.models(model.set.proteo.adult, subset = delta<2)
+top.adult.firmic<- top.models.fir.adult[[2]] ## NOTE using 2nd model which contains lay date
+
+layDate.firmic.adult<-effect_plot(top.adult.firmic, pred=z.layDateFirst, x.label="Lay date", y.label="Firmicutes (relative abundance)", interval =TRUE, int.type = "confidence", partial.residuals = TRUE, jitter = 0.1, point.alpha = 0.2, point.size = 0.75)
+
+layDate.firmic.adult
+```
+
+## Age
+```{r}
+#top.adult.proteo <- get.models(model.set.proteo.adult, subset = delta<2)
+top.adult.proteo <- top.models.pro.adult[[1]]
+top.adult.proteo@frame$c.ageDays <- ifelse(top.adult.proteo@frame$c.ageDays>0,"Juvenile", "Mature")
+
+age.proteo.adult<-effect_plot(top.adult.proteo, pred=c.ageDays, x.label="Age", y.label="Proteobacteria (relative abundance)", interval =TRUE, int.type = "confidence", partial.residuals = TRUE, jitter = 0.1, point.alpha = 0.2, point.size = 0.75)
+
+age.proteo.adult
+```
+
+```{r}
+#top.adult.proteo <- get.models(model.set.proteo.adult, subset = delta<2)
+top.adult.firmic<- top.models.fir.adult[[1]]
+top.adult.firmic@frame$c.ageDays <- ifelse(top.adult.firmic@frame$c.ageDays>0,"Juvenile", "Mature")
+
+age.firmic.adult<-effect_plot(top.adult.firmic, pred=c.ageDays, x.label="Age", y.label="Firmicutes (relative abundance)", interval =TRUE, int.type = "confidence", partial.residuals = TRUE, jitter = 0.1, point.alpha = 0.2, point.size = 0.75)
+
+age.firmic.adult
+```
+
+## Sex
+
+Adult top models
+* read in again to avoid errors
+```{r}
+binomial.response <- cbind(proteobacteria.adult.df$Abundance / proteobacteria.adult.df$NumberOfReads)
+top.models.pro.adult <- get.models(model.set.proteo.adult, subset = delta<2)
+top.adult.proteo <- top.models.pro.adult[[1]]
+
+binomial.response <- cbind(firmicutes.adult.df$Abundance / firmicutes.adult.df$NumberOfReads)
+top.models.fir.adult <- get.models(model.set.firmicutes.adult, subset = delta<2)
+top.adult.firmic <- top.models.fir.adult[[1]]
+
+```
+
+```{r}
+top.adult.proteo@frame$c.Sex <- as.factor(ifelse(top.adult.proteo@frame$c.Sex>0,"Female", "Male"))
+levels(top.adult.proteo@frame$c.Sex)
+
+sex.proteo.adult <- effect_plot(top.adult.proteo, pred=c.Sex, x.label="Sex", y.label="Proteobacteria Relative abundance", interval =TRUE, int.type = "confidence", partial.residuals = TRUE, jitter = 0.1, point.alpha = 0.2, point.size = 0.75)
+
+sex.proteo.adult
+```
+
+```{r}
+top.adult.firmic@frame$c.Sex <- as.factor(ifelse(top.adult.firmic@frame$c.Sex>0,"Female", "Male"))
+
+#levels(top.adult.firmic@frame$c.Sex)
+
+sex.firmic.adult <- effect_plot(top.adult.firmic, pred=c.Sex, x.label="Sex", y.label="Firmicutes Relative abundance", interval =TRUE, int.type = "confidence", partial.residuals = TRUE, jitter = 0.1, point.alpha = 0.2, point.size = 0.75)#, data = top.adult.firmic@frame)
+
+sex.firmic.adult
+```
+
+## Sex*brood Size
+
+Keep in mind that the default behavior of interact_plot is to mean-center all continuous variables not involved in the interaction so that the predicted values are more easily interpreted."-from Interactions vignette
+* mine are already mean centred so shouldnt make a difference as mean is zero already?
+```{r}
+#top.adult.proteo.HACK <- top.adult.proteo
+#NumberOfReads <- cbind(top.adult.proteo.HACK@frame, proteobacteria.adult.df$NumberOfReads)
+#top.adult.proteo.HACK@frame <- cbind(top.adult.proteo.HACK@frame, NumberOfReads)
+
+broodSizeXsex.proteo.adult<-interact_plot(top.adult.proteo, pred=z.broodSizeWhenSampled, modx=c.Sex, interval =TRUE, int.type = "confidence", x.label="Brood Size", y.label="Proteobacteria Relative abundance", legend.main = "Sex", partial.residuals = TRUE, point.size = 0.75)#, data = top.adult.proteo@frame)#, partial.residuals = TRUE
+
+broodSizeXsex.proteo.adult
+```
+
+```{r}
+broodSizeXsex.firmic.adult <- interact_plot(top.adult.firmic, pred=z.broodSizeWhenSampled, modx=c.Sex, interval =TRUE, int.type = "confidence", x.label="Brood Size", y.label="Firmicutes Relative abundance", legend.main = "Sex", partial.residuals = TRUE, point.size = 0.75)#, data = top.adult.firmic@frame)#, partial.residuals = TRUE
+
+broodSizeXsex.firmic.adult
+```
+
+## Sex*Distance
+
+Adult top models
+* read in again to avoid errors
+```{r}
+binomial.response <- cbind(proteobacteria.adult.df$Abundance / proteobacteria.adult.df$NumberOfReads)
+top.models.pro.adult <- get.models(model.set.proteo.adult, subset = delta<2)
+top.adult.proteo <- top.models.pro.adult[[1]]
+
+binomial.response <- cbind(firmicutes.adult.df$Abundance / firmicutes.adult.df$NumberOfReads)
+top.models.fir.adult <- get.models(model.set.firmicutes.adult, subset = delta<2)
+top.adult.firmic <- top.models.fir.adult[[1]]
+
+top.adult.proteo@frame$c.Sex <- as.factor(ifelse(top.adult.proteo@frame$c.Sex>0,"Female", "Male"))
+#levels(top.adult.proteo@frame$c.Sex)
+
+top.adult.firmic@frame$c.Sex <- as.factor(ifelse(top.adult.firmic@frame$c.Sex>0,"Female", "Male"))
+```
+
+```{r}
+distanceXsex.proteo.adult<-interact_plot(top.adult.proteo, pred=z.DistanceToEdge, modx=c.Sex, interval =TRUE, int.type = "confidence", x.label="Distance to edge", y.label="Proteobacteria Relative abundance", legend.main = "Sex", partial.residuals = TRUE, point.size = 0.75)
+
+distanceXsex.proteo.adult
+```
+
+```{r}
+distanceXsex.firmic.adult<-interact_plot(top.adult.firmic, pred=z.DistanceToEdge, modx=c.Sex, interval =TRUE, int.type = "confidence", x.label="Distance to edge", y.label="Firmicutes Relative abundance", legend.main = "Sex", partial.residuals = TRUE, point.size = 0.75)#, partial.residuals = TRUE
+
+distanceXsex.firmic.adult
+```
+
+## Sex*Lay date
+
+```{r}
+layDateXsex.proteo.adult<-interact_plot(top.adult.proteo, pred=z.layDateFirst, modx=c.Sex, interval =TRUE, int.type = "confidence", x.label="Lay date", y.label="Proteobacteria (relative abundance)", legend.main = "Sex" , partial.residuals = TRUE, point.size = 0.75)#, partial.residuals = TRUE
+
+layDateXsex.proteo.adult
+```
+
+```{r}
+layDateXsex.firmic.adult<-interact_plot(top.adult.firmic, pred=z.layDateFirst, modx=c.Sex, interval =TRUE, int.type = "confidence", x.label="Lay date", y.label="Firmicutes (relative abundance)", legend.main = "Sex" ,  partial.residuals = TRUE, point.size = 0.75)
+
+layDateXsex.firmic.adult
+```
+
+
+# Arrange plots
+
+```{r}
+theme_classic2 <- function(base_size = 12, base_family = ""){
+  theme_bw(base_size = base_size, base_family = base_family) %+replace%
+    theme(
+      legend.position = "none",
+      panel.border     = element_blank(),
+      axis.line        = element_line(colour = "black"),
+      panel.grid.major=element_line(colour="grey", size=0.5, 3),
+      panel.grid.major.x = element_blank(),
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      panel.grid.minor.y = element_blank(),
+      strip.background = element_blank(),
+      legend.key       = element_blank(),
+      plot.title = element_text(hjust = 0.5, face = "bold") # centre and bold title
+    )
+}
+```
+
+```{r}
+p3 <- plot_grid(ageXhabitat.proteo.all+theme_classic2()+ylab(NULL)+labs(title="Proteobacteria"), ageXhabitat.firmic.all+theme_classic2()+ylab(NULL)+labs(title="Firmicutes"), ncol=2, labels = c("A", "B"))
+
+p4 <- plot_grid(broodSizeXage.proteo.all+theme_classic2()+ylab(NULL), broodSizeXage.firmic.all+theme_classic2()+ylab(NULL), distanceXage.proteo.all+theme_classic2()+ylab(NULL), distanceXage.firmic.all+theme_classic2()+ylab(NULL), layDatexage.proteo.all+theme_classic2()+ylab(NULL), layDateXage.firmic.all+theme_classic2()+ylab(NULL), ncol=2, labels = c("C", "D", "E", "F", "G", "H"), label_x = 0, label_y = 1.2)
+
+# get common legend of all interaction plots
+p3.legend <- get_legend(ageXhabitat.proteo.all)
+p4.legend <- get_legend(broodSizeXage.proteo.all)
+
+p3.grid <- plot_grid(p3, p3.legend, rel_widths = c(3, .5))
+p4.grid <- plot_grid(p4, p4.legend, rel_widths = c(3, .5))
+
+p5 <- plot_grid(p3.grid, p4.grid, nrow = 2,  rel_heights = c(1,3))
+p5
+```
+
+
+```{r}
+# make grid of age plots
+p1 <- plot_grid(age.proteo.adult+theme_classic2()+ylab(NULL)+labs(title="Proteobacteria"), age.firmic.adult+theme_classic2()+ylab(NULL)+labs(title="Firmicutes"), labels = c("A", "B")) 
+p1.legend <- get_legend(age.proteo.adult)
+
+# fake legend to align properly with below plots
+p1.grid <- plot_grid(p1, p1.legend, rel_widths = c(3, .4) )
+
+# add in sex graph
+p1.5.grid <- plot_grid(plot_grid(sex.proteo.adult+theme_classic2()+ylab(NULL), sex.firmic.adult+theme_classic2()+ylab(NULL), labels = c("C", "D"), label_x = 0, label_y = 1.1), p1.legend, ncol = 2, rel_widths = c(3, .4) ) 
+
+p1.5.1.grid <- plot_grid(p1.grid, p1.5.grid, nrow = 2)
+
+#make grid of all adult interaction plots
+#p2 <- plot_grid(broodSizeXsex.proteo.adult+theme_classic2()+ylab(NULL), broodSizeXsex.firmic.adult+theme_classic2()+ylab(NULL), distanceXsex.proteo.adult+theme_classic2()+ylab(NULL), distanceXsex.firmic.adult+theme_classic2()+ylab(NULL), ncol = 2, labels = c("E", "F", "G", "H"), label_x = 0, label_y = 1.1)
+
+p2 <- plot_grid(broodSizeXsex.proteo.adult+theme_classic2()+ylab(NULL), broodSizeXsex.firmic.adult+theme_classic2()+ylab(NULL), distanceXsex.proteo.adult+theme_classic2()+ylab(NULL), distanceXsex.firmic.adult+theme_classic2()+ylab(NULL), layDateXsex.proteo.adult+theme_classic2()+ylab(NULL), layDateXsex.firmic.adult+theme_classic2()+ylab(NULL), ncol = 2, labels = c("E", "F", "G", "H", "I", "J"), label_x = 0, label_y = 1.1)
+
+# get common legend of all interaction plots
+p2.legend <- get_legend(broodSizeXsex.proteo.adult)
+
+p2.grid <- plot_grid(p2, p2.legend, rel_widths = c(3, .5))
+
+# combine
+adult.grid <- plot_grid(p1.5.1.grid, p2.grid, nrow = 2, rel_heights = c(2,3))
+
+adult.grid
+```
+
+# Plot model averaged models
+
+Error: $ operator is invalid for atomic vectorsxs
+```{r}
+# model.avg.proteobacteria.adult <- model.avg(top.models.pro.adult)
+# 
+# interact_plot(model.avg.proteobacteria.adult, pred=z.layDateFirst, modx=c.Sex, interval =TRUE, int.type = "confidence", x.label="Lay date", y.label="Firmicutes (relative abundance)", legend.main = "Sex" , data = top.adult.proteo@frame)
+```
+

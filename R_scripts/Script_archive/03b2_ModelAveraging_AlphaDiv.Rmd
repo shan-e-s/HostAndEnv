@@ -1,0 +1,260 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Model averaging for alpha diversity models according to Grueber, Nakagawa paper.
+
+This script is similar to 03b1...Rmd in Scripts_archive but includes sex in the all birds model, where sex estimates will be reported for a model using a subset of adults only on Gabrielles advice 
+
+Moved to scripts_archive 14/1/2022 following meeting with JQ and GD which updated analyses
+
+```{r Housekeeping, echo=FALSE}
+rm(list=ls())
+#set.seed(111)
+```
+
+
+```{r}
+#install.packages("arm")
+
+library(MuMIn)
+library(arm)
+library(microbiome)
+library(tidyverse)
+library(kableExtra)
+library(phyloseq)
+```
+
+```{r Read in data, warning=FALSE, echo=FALSE}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+
+# relevel habitat
+#metadata$habitat <- relevel(metadata$habitat, "deciduous") # no difference in results if habitat releveled other than coefficient signs change (direction of effect)
+```
+
+```{r}
+# # subset to adults
+phylo.adults <- subset_samples(phylo.spring, Sex!="Unsexed")
+adults.metadata <- meta(phylo.adults@sam_data)
+
+# relevel habitat
+#adults.metadata$Sex <- relevel(adults.metadata$Sex, "M") # no difference in results if habitat or sex releveled
+```
+
+
+```{r}
+my.backward.diff = matrix(c(-2/3, 1/3, 1/3, -1/3, -1/3, 2/3), ncol = 2)
+my.backward.diff
+```
+
+Adding this contrast makes no difference to AIC
+```{r}
+levels(metadata$ageBinned) # verify: 1week,2week,adult
+#assigning the backward difference coding to ageBinned
+contrasts(metadata$ageBinned) = my.backward.diff
+```
+
+Relevel Sex variable
+```{r}
+#metadata$Sex <- relevel(metadata$Sex, "M") # no difference in results if habitat or sex releveled
+```
+
+Make 'age-class' variable which incorporates Juv/Mature into ageBinned variable
+```{r}
+metadata$ageBinned
+metadata$ageDays
+
+ageClass <- character(length=length(metadata$ageBinned))
+for (i in 1:length(metadata$ageBinned)) {
+  ifelse(metadata$ageBinned[i]=="adult",ageClass[i] <- as.character(metadata$ageDays[i]),NA)
+  ifelse(metadata$ageBinned[i]!="adult",ageClass[i] <- as.character(metadata$ageBinned[i]),NA)}
+
+# verify above worked as expected
+#cbind(as.character(metadata$ageBinned), as.character(metadata$ageDays), as.character(ageClass))
+
+metadata <- cbind(metadata, ageClass)
+```
+
+Set new contrasts for ageClass
+```{r}
+my.backward.diff.ageClass = matrix(c(-3/4, 1/4, 1/4, 1/4, -1/2, -1/2, 1/2, 1/2, 
+ -1/4, -1/4, -1/4, 3/4), ncol = 3)
+
+my.backward.diff.ageClass
+```
+
+```{r}
+levels(metadata$ageClass) # verify: 1week,2week,adult
+#assigning the backward difference coding to ageBinned
+contrasts(metadata$ageClass) = my.backward.diff.ageClass
+```
+
+# all birds shannon
+
+Note: Must fit with REML and i am using non-scaled dataset.
+* fit global model with REML
+* adding: Sex * habitat * broodSizeWhenSampled + Sex * habitat * layDateFirst but dont bother with sex*habitat interaction due to low n (according to JQ)
+*model is rank deficient*
+```{r}
+#metadata.scaled$habitat <- relevel(metadata.scaled$habitat, "conifer")
+
+shannon.global <- lmer(log(shannon) ~ ageBinned * habitat * layDateFirst + ageBinned * broodSizeWhenSampled + DistanceToEdge*habitat + Sex*layDateFirst + Sex*broodSizeWhenSampled + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata, REML = TRUE)
+summary(shannon.global)
+```
+
+
+Standardize the input variables
+* http://www.stat.columbia.edu/~gelman/research/published/standardizing7.pdf
+* "For comparing coefficients for different predictors within a model, standardizing gets the nod. (Although I don’t standardize binary inputs. I code them as 0/1, and then I standardize all other numeric inputs by dividing by two standard deviation, thus putting them on approximately the same scale as 0/1 variables.)"
+```{r}
+stdz.model <- standardize(shannon.global, standardize.y = FALSE)#, unchanged = "habitat")#, binary.inputs = "full")#
+summary(stdz.model)
+```
+
+Generate model set
+
+Forcing inclusion of age*habitat interaction.
+Using AICc over AIC didnt change significance at all.
+dredge using ML (i.e. REML=FALSE)
+```{r}
+# change na. action
+options(na.action = "na.fail") # required for dredge to run for some reason
+
+getAllTerms(stdz.model) 
+
+model.set <- dredge(stdz.model, fixed= ~ ageBinned + c.habitat + ageBinned:c.habitat, rank="AICc", REML = FALSE)
+
+options(na.action = "na.omit") # set back to default
+
+```
+
+Extract top models and refit using REML
+```{r}
+top.models <- get.models(model.set, subset = delta<2, REML = TRUE)
+```
+
+## Model averaging: shannon all birds
+
+"Note there are two sets of estimates: the “full” coefficients set terms to 0 if they are not included in the model while averaging, whereas the “conditional” coefficients ignores the predictors entirely. The “full” coefficients are thus more conservative and it is best practice to interpret these. "-uoftcoders
+```{r}
+model.avg1 <- model.avg(top.models)
+
+summary(model.avg1)
+```
+
+## Drop unsexed
+
+Try dropping unsexed
+* Error: number of levels of each grouping factor must be < number of observations (problems: bird.ID:(nest:site))
+  * so adding mature/juv classification to age variable
+* getting error in subsequent chunk when subsetting internally so will use subset directly
+```{r}
+#metadata.scaled$habitat <- relevel(metadata.scaled$habitat, "conifer")
+
+shannon.global.dropSex <- lmer(log(shannon) ~ ageDays * habitat * layDateFirst + ageDays * broodSizeWhenSampled + DistanceToEdge*habitat + Sex*layDateFirst + Sex*broodSizeWhenSampled + (1|site/nest) + (1|SequencePlate), data = adults.metadata, REML = TRUE) #subset(metadata, !Sex=="Unsexed")
+
+summary(shannon.global.dropSex)
+```
+
+getting error when using model created from internal model subset call ie where "data=subset(metadata, !Sex=="Unsexed")"
+
+```{r}
+stdz.model.dropSex <- standardize(shannon.global.dropSex, standardize.y = FALSE) #, unchanged = "habitat")#, binary.inputs = "full")#
+summary(stdz.model.dropSex)
+```
+
+Generate model set
+
+Forcing inclusion of age*habitat interaction.
+Using AICc over AIC didnt change significance at all.
+dredge using ML (i.e. REML=FALSE)
+```{r}
+# change na. action
+options(na.action = "na.fail") # required for dredge to run for some reason
+
+getAllTerms(stdz.model.dropSex) 
+
+#model.set.dropSex <- dredge(stdz.model.dropSex, fixed= ~ c.ageDays + c.habitat + c.ageDays:c.habitat, rank="AICc", REML = FALSE)
+model.set.dropSex <- dredge(stdz.model.dropSex, fixed= ~ c.ageDays * c.habitat + z.layDateFirst + c.habitat*z.DistanceToEdge + c.Sex, rank="AICc", REML = FALSE)
+
+options(na.action = "na.omit") # set back to default
+
+```
+
+Extract top models and refit using REML
+* only one model makes the cut therefoer cant average
+* *what is reference value of Sex?*
+```{r}
+top.models.dropSex <- get.models(model.set.dropSex, subset = delta<2, REML = TRUE)
+
+top.models.dropSex <- get.models(model.set.dropSex, subset = delta<2, REML = TRUE)[[1]]
+summary(top.models.dropSex)
+```
+
+Only 1 model supplied therefore cant average
+```{r}
+#model.avg.dropSex <- model.avg(top.models.dropSex)
+#summary(model.avg.dropSex)
+```
+
+Force to have same variables as global model
+
+
+
+
+
+
+# all birds chao1
+
+Note: Must fit with REML and i am using non-scaled dataset.
+* fit global model with REML
+* adding: Sex * habitat * broodSizeWhenSampled + Sex * habitat * layDateFirst but dont bother with sex*habitat interaction due to low n (according to JQ)
+*model is rank deficient*
+```{r}
+#metadata.scaled$habitat <- relevel(metadata.scaled$habitat, "conifer")
+
+chao.global <- lmer(log(chao1) ~ ageBinned * habitat * layDateFirst + ageBinned * broodSizeWhenSampled + DistanceToEdge*habitat + Sex*layDateFirst + Sex*broodSizeWhenSampled + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata, REML = TRUE)
+summary(all.sh.lmm)
+```
+
+
+Standardize the input variables
+* http://www.stat.columbia.edu/~gelman/research/published/standardizing7.pdf
+* "For comparing coefficients for different predictors within a model, standardizing gets the nod. (Although I don’t standardize binary inputs. I code them as 0/1, and then I standardize all other numeric inputs by dividing by two standard deviation, thus putting them on approximately the same scale as 0/1 variables.)"
+```{r}
+stdz.model.chao <- standardize(chao.global, standardize.y = FALSE)#, unchanged = "habitat")#, binary.inputs = "full")#
+summary(stdz.model.chao)
+```
+
+Generate model set
+
+Forcing inclusion of age*habitat interaction.
+Using AICc over AIC didnt change significance at all.
+dredge using ML (i.e. REML=FALSE)
+```{r}
+# change na. action
+options(na.action = "na.fail") # required for dredge to run for some reason
+
+getAllTerms(stdz.model.chao) 
+
+model.set.chao <- dredge(stdz.model.chao, fixed= ~ ageBinned + c.habitat + ageBinned:c.habitat, rank="AICc", REML = FALSE)
+
+options(na.action = "na.omit") # set back to default
+
+```
+
+Extract top models and refit using REML
+```{r}
+top.models.chao <- get.models(model.set.chao, subset = delta<2, REML = TRUE)
+```
+
+## Model averaging: chao all birds
+
+"Note there are two sets of estimates: the “full” coefficients set terms to 0 if they are not included in the model while averaging, whereas the “conditional” coefficients ignores the predictors entirely. The “full” coefficients are thus more conservative and it is best practice to interpret these. "-uoftcoders
+```{r}
+model.avg2 <- model.avg(top.models.chao)
+
+summary(model.avg2)
+```

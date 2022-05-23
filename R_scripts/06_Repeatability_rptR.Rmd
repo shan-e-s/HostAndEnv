@@ -1,0 +1,313 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Calculate repeatability for individual ID using the rptR package.
+
+Calculations by hand in archived script "06_Repeatability_byHand"
+
+See
+* vignette: https://cran.r-project.org/web/packages/rptR/vignettes/rptR.html
+* paper in directory/Papers/Repeatability: Repeatability for Gaussian and non‐Gaussian data a practical guide for biologists by Nakagawa
+* paper in directory/Papers/Repeatability: rptR  repeatability estimation and variance decomposition by generalized linear by Stoffel
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+#install.packages("rptR")
+library(rptR)
+library(microbiome)
+library(dplyr)
+```
+
+```{r}
+set.seed(1189) # for bootstrapping part
+```
+
+# read in
+```{r}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+
+```
+
+# Create nestling dataset
+```{r}
+phylo.nestling <- subset_samples(phylo.spring, ageBinned!="adult")
+nestling.metadata <- meta(phylo.nestling@sam_data)
+rm(list = c("phylo.spring", "metadata"))
+```
+
+# Shannon diversity agreement repeatability
+
+Agreement repeatabilities represent the group-level variance over the sum of all other variance components. 
+
+## Site only
+```{r}
+rpt.shannon.site.only <- rpt(log(shannon) ~ (1|site), grname = "site", data = nestling.metadata, datatype = "Gaussian", nboot = 100, nperm = 0, parallel = T)
+
+print(rpt.shannon.site.only)
+#summary(rpt.shannon.birdID.only)
+```
+
+## Nest only
+```{r}
+rpt.shannon.nest.only <- rpt(log(shannon) ~ (1|nest), grname = "nest", data = nestling.metadata, datatype = "Gaussian", nboot = 100, nperm = 0, parallel = T)
+
+print(rpt.shannon.nest.only)
+#summary(rpt.shannon.birdID.only)
+```
+## Bird ID only
+
+Set nboot and perm to 0 to start and set nboot to at least 1000 after confirming there is repeatability, this will then give SE and CI estimates
+
+Note: singular fit warnings, probably reflcted by lower CI at 0?
+```{r}
+rpt.shannon.birdID.only <- rpt(log(shannon) ~ (1|bird.ID), grname = "bird.ID", data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T)
+
+print(rpt.shannon.birdID.only)
+#summary(rpt.shannon.birdID.only)
+```
+
+```{r}
+#plot(rpt.shannon.birdID.only, cex.main = 1)
+```
+
+## Bird ID and fixed
+Adjusted repeatability according to Nakagama and Schielzeth 2010, involves controlling for fixed effects by including them in the model BUT NOT INCLUDING THEM in the denominator.
+
+Vignette
+"All repeatability estimates so far were agreement repeatabilities in the sense that they represent the group-level variance over the sum of all other variance components. This situation changes when fixed effects come into play. Fixed effects explain part of the variances in the data and the variance assigned to fixed effects in the model will not appear in the denominator of the repeatability, at least under the rptR default settings. It is still possible to fit fixed effects in rptR, but the repeatability has then to be interpreted as the repeatability after controlling for fixed effects. This can be thought of as the repeatability when all observations are shifted along the slopes of the fixed effects covariates till they reach the ordinate. An equivalent estimate would have been derived if all data had been collected at the point where all covariates are zero. Since the procedure involves statistically adjustments, we have called this the adjusted repeatability (Nakagawa & Schielzeth 2010)."
+
+In this case the variance of the fixed effect is ignored
+* include variance of fixed effects in denominator by adding "adjusted = FALSE"
+```{r}
+rpt.shannon.birdID.fixed <- rpt(log(shannon) ~ ageBinned*habitat + (1|bird.ID), grname = c("bird.ID", "Fixed"), data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = TRUE)
+
+print(rpt.shannon.birdID.fixed)
+#summary(rpt.shannon.birdID.only)
+```
+
+## Bird ID, nest and fixed
+
+I should potentially be nesting these variables i.e. (1| nest/bird.ID), slightly discussed in vignette, more discussion in Schielzeth & Nakagawa 2013, but cant get nested random terms to run see chunk below
+```{r}
+rpt.shannon.birdID.nest.fixed <- rpt(log(shannon) ~ ageBinned*habitat + (1|bird.ID) + (1|nest), grname = c("bird.ID", "nest", "Fixed"), data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T)
+print(rpt.shannon.birdID.nest.fixed)
+#summary(rpt.shannon.birdID.only)
+```
+
+Try with nested variables
+* Error in parse....
+* runs for a few seconds then gives error
+```{r}
+# rpt.shannon.birdID.nest.ed <- rpt(log(shannon) ~ (1|nest/bird.ID), grname = c("bird.ID:nest"), data = nestling.metadata, datatype = "Gaussian", nboot = 100, nperm = 0, parallel = T)
+# print(rpt.shannon.birdID.nest.ed)
+#summary(rpt.shannon.birdID.only)
+```
+
+## Bird ID, nest, site and fixed
+```{r}
+rpt.shannon.birdID.nest.site.fixed <- rpt(log(shannon) ~ ageBinned*habitat + (1|bird.ID) + (1|nest) + (1|site), grname = c("bird.ID", "nest", "site", "Fixed"), data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T)
+print(rpt.shannon.birdID.nest.site.fixed)
+#summary(rpt.shannon.birdID.only)
+```
+
+In this case the variance of the fixed effect is included in the denominator
+* very little change, so fixed efffects dont explain much variance
+```{r}
+rpt.shannon.birdID.nest.site.fixed <- rpt(log(shannon) ~ ageBinned*habitat + (1|bird.ID) + (1|nest) + (1|site), grname = c("bird.ID", "nest", "site", "Fixed"), data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+print(rpt.shannon.birdID.nest.site.fixed)
+#summary(rpt.shannon.birdID.only)
+```
+
+######################################################################################################
+
+# Chao diversity repeatability
+
+## Site only
+```{r}
+rpt.chao.site <- rpt(log(chao1) ~ (1|site), grname = c("site"), data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T)
+print(rpt.chao.site)
+#summary(rpt.chao.site)
+```
+
+## Nest only
+```{r}
+rpt.chao.nest <- rpt(log(chao1) ~ (1|nest), grname = c("nest"), data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T)
+print(rpt.chao.nest)
+#summary(rpt.chao.nest)
+```
+
+## Bird ID only
+
+```{r}
+rpt.chao.birdID <- rpt(log(chao1) ~ (1|bird.ID), grname = c("bird.ID"), data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T)
+print(rpt.chao.birdID)
+#summary(rpt.shannon.birdID.only)
+```
+
+## Bird ID and fixed
+```{r}
+rpt.chao.birdID.fixed <- rpt(log(chao1) ~ ageBinned*habitat + (1|bird.ID), grname = c("bird.ID", "Fixed"), data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = TRUE)
+
+print(rpt.chao.birdID.fixed)
+#summary(rpt.shannon.birdID.only)
+```
+
+## Bird ID, nest and fixed
+
+```{r}
+rpt.chao.birdID.nest.fixed <- rpt(log(chao1) ~ ageBinned*habitat + (1|bird.ID) + (1|nest), grname = c("bird.ID", "nest", "Fixed"), data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T)
+print(rpt.chao.birdID.nest.fixed)
+#summary(rpt.shannon.birdID.only)
+```
+
+## Bird ID, nest, site and fixed
+
+```{r}
+rpt.chao.birdID.nest.site.fixed <- rpt(log(chao1) ~ ageBinned*habitat + (1|bird.ID) + (1|nest) + (1|site), grname = c("bird.ID", "nest", "site", "Fixed"), data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T)
+print(rpt.chao.birdID.nest.site.fixed)
+#summary(rpt.shannon.birdID.only)
+```
+
+In this case the variance of the fixed effect is included in the denominator
+* very little change, so fixed efffects dont explain much variance
+```{r}
+rpt.chao.birdID.nest.site.fixed.Nadjust <- rpt(log(chao1) ~ ageBinned*habitat + (1|bird.ID) + (1|nest) + (1|site), grname = c("bird.ID", "nest", "site", "Fixed"), data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+print(rpt.chao.birdID.nest.site.fixed.Nadjust)
+```
+
+# Phyla RA repeatability
+## read in RA
+```{r}
+mot <- readRDS("../Data/05_melted.phyla.glom.rds")
+```
+
+```{r Split df by phyla}
+proteobacteria.df <- mot[mot$Phylum=="Proteobacteria",]
+firmicutes.df <- mot[mot$Phylum=="Firmicutes",]
+
+```
+
+Subset to nestlings
+```{r}
+proteobacteria.df <- proteobacteria.df[!proteobacteria.df$ageBinned=="adult",]
+firmicutes.df <- firmicutes.df[!firmicutes.df$ageBinned=="adult",]
+```
+
+Standardize datasets
+* using a more stanrdard standardising technique then i am for the actual modelling where i standardise after fitting model
+```{r}
+numeric.predictors <- c( "broodSizeWhenSampled", "clutchSize", "layDateFirst", "DistanceToEdge")
+
+# centre and scale numeric variables ie. subtract mean and divide by st. deviation
+proteobacteria.df[,numeric.predictors] <- scale(proteobacteria.df[,numeric.predictors])
+
+firmicutes.df[,numeric.predictors] <- scale(firmicutes.df[,numeric.predictors])
+```
+
+
+Create binomial responses and add to dataframe
+* cant pass it a separate response variable, needs to be part of data = dataframe
+```{r}
+pro.binomial.response <- cbind(proteobacteria.df$Abundance, (proteobacteria.df$NumberOfReads - proteobacteria.df$Abundance))
+
+proteobacteria.df <- cbind(proteobacteria.df, pro.binomial.response) %>%
+  rename(succ = "1", fail = "2")
+
+fir.binomial.response <- cbind(firmicutes.df$Abundance, (firmicutes.df$NumberOfReads - firmicutes.df$Abundance))
+
+firmicutes.df <- cbind(firmicutes.df, fir.binomial.response) %>%
+  rename(succ = "1", fail = "2")
+```
+
+
+# Proteobacteria RA repeatability
+## Site only
+```{r}
+rpt.pro.site <- rpt(cbind(succ, fail) ~ (1|site), grname = c("site"), data = proteobacteria.df, datatype = "Proportion", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pro.site)
+```
+
+## Nest only
+```{r}
+rpt.pro.nest <- rpt(cbind(succ, fail) ~ (1|nest), grname = c("nest"), data = proteobacteria.df, datatype = "Proportion", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pro.nest)
+```
+
+## Bird ID only
+```{r}
+rpt.pro.bird <- rpt(cbind(succ, fail) ~ (1|bird.ID), grname = c("bird.ID"), data = proteobacteria.df, datatype = "Proportion", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pro.bird)
+```
+
+## Bird ID and fixed
+```{r}
+rpt.pro.bird.fixed <- rpt(cbind(succ, fail) ~ ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + broodSizeWhenSampled*habitat + broodSizeWhenSampled*DistanceToEdge + (1|bird.ID), grname = c("bird.ID", "Fixed"), data = proteobacteria.df, datatype = "Proportion", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pro.bird.fixed)
+```
+
+## Bird ID, nest and fixed
+```{r}
+rpt.pro.bird.nest.fixed <- rpt(cbind(succ, fail) ~ ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + broodSizeWhenSampled*habitat + broodSizeWhenSampled*DistanceToEdge + (1|bird.ID) + (1|nest), grname = c("bird.ID", "nest", "Fixed"), data = proteobacteria.df, datatype = "Proportion", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pro.bird.nest.fixed)
+```
+
+## Bird ID, nest, site and fixed
+```{r}
+rpt.pro.bird.nest.site.fixed <- rpt(cbind(succ, fail) ~ ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + broodSizeWhenSampled*habitat + broodSizeWhenSampled*DistanceToEdge + (1|bird.ID) + (1|nest) + (1|site), grname = c("bird.ID", "nest", "site", "Fixed"), data = proteobacteria.df, datatype = "Proportion", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pro.bird.nest.site.fixed)
+```
+
+# Firmicutes RA repeatability
+## Site only
+```{r}
+rpt.fir.site <- rpt(cbind(succ, fail) ~ (1|site), grname = c("site"), data = firmicutes.df, datatype = "Proportion", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.fir.site)
+```
+
+## Nest only
+```{r}
+rpt.fir.nest <- rpt(cbind(succ, fail) ~ (1|nest), grname = c("nest"), data = firmicutes.df, datatype = "Proportion", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.fir.nest)
+```
+
+## Bird ID only
+```{r}
+rpt.fir.bird <- rpt(cbind(succ, fail) ~ (1|bird.ID), grname = c("bird.ID"), data = firmicutes.df, datatype = "Proportion", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.fir.bird)
+```
+
+## Bird ID and fixed
+```{r}
+rpt.fir.bird.fixed <- rpt(cbind(succ, fail) ~ ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + broodSizeWhenSampled*habitat + broodSizeWhenSampled*DistanceToEdge + (1|bird.ID), grname = c("bird.ID", "Fixed"), data = firmicutes.df, datatype = "Proportion", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.fir.bird.fixed)
+```
+
+## Bird ID, nest and fixed
+```{r}
+rpt.fir.bird.nest.fixed <- rpt(cbind(succ, fail) ~ ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + broodSizeWhenSampled*habitat + broodSizeWhenSampled*DistanceToEdge + (1|bird.ID) + (1|nest), grname = c("bird.ID", "nest", "Fixed"), data = firmicutes.df, datatype = "Proportion", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.fir.bird.nest.fixed)
+```
+
+## Bird ID, nest, site and fixed
+```{r}
+rpt.fir.bird.nest.site.fixed <- rpt(cbind(succ, fail) ~ ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + broodSizeWhenSampled*habitat + broodSizeWhenSampled*DistanceToEdge + (1|bird.ID) + (1|nest) + (1|site), grname = c("bird.ID", "nest", "site", "Fixed"), data = firmicutes.df, datatype = "Proportion", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.fir.bird.nest.site.fixed)
+```

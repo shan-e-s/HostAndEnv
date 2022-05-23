@@ -1,0 +1,962 @@
+---
+title: "Model comparison for Host and Environmental drivers report: alpha diversity analyses"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+This script provides a record of models made to analyses host and environmental drivers of alpha diversity of great tit microbiome. In particular, it provides a comparison of various potential models, with differing random and fixed effects.
+
+Updating May 2020, will explore different error families instead of simply transformations and mixed effect structures.
+* compared most appropriate transformations of raw response with Poisson distribution using dharma for shannon and chao1 for each data subset
+* looked at Poisson for shannon models however, Poisson expects the response to be integers. I therefore converted the response to integers and multiplied by a constant (100 or 1000) in order to not lose detail i.e. usually small differences of a few decimals between shannon values.
+* found most approriate models of those tested were:
+  * all-shannon: log
+  * all-chao1: log or cube-root
+  * adult-shannon: cube-root, but model is poor, try to improve (unbalanced)
+  * adult-chao: ___, model is poor, try to improve (unbalanced)
+  * nestling-shannon: log
+  * nestling-chao1: log
+
+<!--## Set-up and libraries-->
+
+# Set-up and libraries
+
+```{r setup, echo=FALSE}
+# library( knitr )
+# knitr::opts_chunk$set(echo=FALSE, results = 'hide', warning = FALSE) # sets all chunks to "echo=FALSE" unless explicitly set to TRUE
+# options(kableExtra.auto_format = FALSE) # need this so kable renders in Word
+```
+
+```{r Housekeeping, echo=FALSE}
+rm(list=ls())
+#set.seed(10)
+```
+
+```{r, eval=FALSE, results='hide', warning=FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("phyloseq")
+BiocManager::install("metagenomeSeq")
+BiocManager::install("microbiome")
+
+```
+
+```{r Set-up, message=FALSE, echo=FALSE}
+# libraries
+#install.packages("tidyverse", dependencies = T)
+library(vegan)  ##note had trouble installing, needed to install gfortran first
+library(tidyverse) #
+library(phyloseq) 
+library(lme4)
+library(microbiome)
+library(gridExtra)
+library(ggpubr)
+library(lmerTest) # NOTE: overloads lme4 and extends test to provide p-values AND therefore causes DHARMa to give a warning but doesnt appear to effect it
+library(DHARMa)
+library(kableExtra)
+#library(sjPlot) # do i trust this package? Use effects instead.
+library(effects)
+library(emmeans)
+```
+
+```{r Read in data, warning=FALSE, echo=FALSE}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+
+phylo.spring
+```
+
+# Data cleaning
+
+Make ageBinned variable differentiate between juvenile and mature adults
+
+```{r}
+#levels(metadata$ageBinned) <- c("1week", "2week", "adult", "juvenile", "mature")
+metadata$new.ageBin <- factor("NA", levels = c("1week", "2week", "adult", "juvenile", "mature"))
+
+for (i in 1:length(metadata$ageBinned)) {
+  if (metadata$ageBinned[i]=="adult") {
+    metadata$new.ageBin[i] <- metadata$ageDays[i]
+  } else {
+    metadata$new.ageBin[i] <- metadata$ageBinned[i]
+  }
+}
+
+#metadata$new.ageBin
+```
+
+```{r Data splits, echo=FALSE}
+# relevel ageBinned factor
+metadata$ageBinned <- relevel(metadata$ageBinned, "1week")
+
+# Split data into adult and nestlings. Use ageBinned("1week","2week","adult").
+# subset to nestlings
+## alt use meta() to extract metadata as df
+phylo.nestlings <- subset_samples(phylo.spring, ageBinned=="1week"|ageBinned=="2week")
+nestlings.meta <- meta(phylo.nestlings@sam_data)
+
+# subset to adults
+phylo.adults <- subset_samples(phylo.spring, ageBinned=="adult")
+adults.meta <- meta(phylo.adults@sam_data)
+```
+
+```{r}
+numeric.predictors <- c("QubitDNA","Tarsus","Weight", "wing", "broodSizeWhenSampled", "broodSizeMax", "totalFledge", "clutchSize", "layDateFirst", "numberDeadPreRinged", "numberDeadPostRinged","scaled.mass","scaled.mass.wing.adult", "scaled.mass.tarsus.adult","scaled.mass.chick", "scaled.mass.tarsus", "scaled.mass.wing", "DistanceToEdge")
+
+# centre and scale numeric variables ie. subtract mean and divide by st. deviation
+metadata.scaled <- metadata
+metadata.scaled[,numeric.predictors] <- scale(metadata.scaled[,numeric.predictors])
+
+adults.meta.scaled <- adults.meta
+adults.meta.scaled[,numeric.predictors] <- scale(adults.meta.scaled[,numeric.predictors])
+
+nestlings.meta.scaled <- nestlings.meta
+nestlings.meta.scaled[,numeric.predictors] <- scale(nestlings.meta.scaled[,numeric.predictors])
+
+```
+
+
+# Alpha diversity
+
+* So are mixed models the best method of comparing alpha diversity between groups? Allows us to control for non-independence of data (nest effects, batch effects). Would non-parametric t-tests (Kruskal-wallis) be a good test?
+
+* Have been using alpha diversity estimates provided by FF however she cautioned about using alpha diversity measures when reads <40000. Ive recalculated a-div having excluded low read samples.
+
+## All birds
+### Visualise: Shannon diversity
+1week birds (n=72), 2week birds (n=101), adult birds (n=47).
+
+Boxplots of both shannon and chao diversity comparing age w/i habitats. Medians of shannon diversity seem similar across age groups but deciduous age groups look different particularly 1week AND adults vs 2week. Opposite looks true for Chao where differences between age groups evident in coniferous but not deciduous habitats. Suggests model with age*habitat interaction OR age and habitat random effects.  
+
+```{r All birds shannon diversity boxplots, echo=FALSE}
+ggplot(metadata, aes(habitat, shannon, color=ageBinned)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Shannon diversity")
+```
+
+Plot shannon diversity to assess normality. Shows right skew. 
+* Both cube-root and Log-shannon is close to normality but H0 rejected by shapiro.
+```{r Plot All birds shannon diversity}
+hist(metadata$shannon) # close to normal but right skewed
+qqnorm((metadata$shannon));qqline((metadata$shannon))
+
+hist((metadata$shannon)^(1/2)) # looks close to normal
+qqnorm((metadata$shannon)^(1/2));qqline((metadata$shannon)^(1/2))
+
+hist((metadata$shannon)^(1/3)) # looks close to normal, bimodal
+qqnorm((metadata$shannon)^(1/3));qqline((metadata$shannon)^(1/3))
+
+hist(log(metadata$shannon)) # looks close to normal, slight left skew
+qqnorm(log(metadata$shannon));qqline(log(metadata$shannon))
+
+```
+
+### Modelling: Shannon diversity
+
+* mod1 fails to converge
+* mod2 works
+* mod3 works. Convergence code 0 before removing bird.ID random effect
+  * uses Poisson error family however Poisson will only work w/ integers, I can convert shannon to integers and this runs well and residuals look good however this loses alot of deatil (drops all digits after decimal). I tried multiplying shannon bu 1000 before converting to integer but model no longer fits well. 
+* mod4, doesnt work. Caroline suggested quasi-poisson however cannot fit quasi-family w/ glmer. 
+```{r All birds shannon model-maximal}
+#?family
+print("mod1")
+mod1 <- lmer((shannon) ~ ageBinned * habitat + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata)
+print("mod2")
+mod2 <- lmer(log(shannon) ~ ageBinned * habitat + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata)
+print("mod3, converting response to integer so Poisson runs")
+mod3 <- glmer(as.integer(shannon*100) ~ ageBinned * habitat + (1|site/nest) + (1|SequencePlate), data = metadata, family = "poisson") # removed bird.ID and model converged
+#mod4 <- glmer((shannon) ~ ageBinned * habitat + (1|site/nest) + (1|SequencePlate), data = metadata, family = "quasipoisson") # cant fit quasi-family with glmer
+
+#metadata$shannon*100 # multiple by 100 or 1000 to maintain greater granularity of data
+```
+
+```{r}
+plot(mod3)
+```
+
+* mod1 looks poor
+* mod2 looks good
+* mod3 looks good
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = mod1, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod2, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod3, n = 250)
+plot(simulationOutput)
+```
+
+### Visualise: Chao diversity
+
+```{r All birds chao diversity boxplots, echo=FALSE}
+ggplot(metadata, aes(habitat, chao1, color=ageBinned)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Chao1 diversity")
+```
+
+Plot chao diversity to assess normality.
+* log and cube-root transformations look quite good
+```{r Plot All birds chao diversity}
+hist(metadata$chao1) # non-normal, heavily right skewed
+qqnorm((metadata$chao1));qqline((metadata$chao1))
+
+hist((metadata$chao1)^(1/2)) # looks closer to normal, still right skewed
+qqnorm((metadata$chao1)^(1/2));qqline((metadata$chao1)^(1/2))
+
+hist((metadata$chao1)^(1/3)) # looks close to normal, still right skewed
+qqnorm((metadata$chao1)^(1/3));qqline((metadata$chao1)^(1/3)) # qq looks quite good
+
+hist(log(metadata$chao1)) # looks close to normal, slight left skew
+qqnorm(log(metadata$chao1));qqline(log(metadata$chao1))
+
+```
+
+### Modelling: Chao1 diversity
+
+* mod1 
+* mod2 
+* mod3 
+* mod4
+* mod5 failed to converge
+```{r All birds shannon model-maximal}
+#?family
+print("mod1")
+mod1 <- lmer((chao1) ~ ageBinned * habitat + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata)
+print("mod2")
+mod2 <- lmer(log(chao1) ~ ageBinned * habitat + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata)
+print("mod3, converting response to integer so Poisson runs. Dropped bird.ID")
+mod3 <- glmer(as.integer(chao1) ~ ageBinned * habitat + (1|site/nest) + (1|SequencePlate), data = metadata, family = "poisson")
+print("mod4")
+mod4 <- lmer((chao1)^(1/3) ~ ageBinned * habitat + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata) 
+print("mod5, this this the same or similar to transforming response?")
+mod5 <- glmer((chao1) ~ ageBinned * habitat + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata, family = gaussian (link = log))
+
+#metadata$shannon*100 # multiple by 100 or 1000 to maintain greater granularity of data
+```
+
+* mod1 looks poor
+* mod2 looks good
+* mod3 looks ok, but not as good as mod2/mod4
+* mod4 looks good
+* mod5 looks poor
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = mod1, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod2, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod3, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod4, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod5, n = 250)
+plot(simulationOutput)
+```
+
+## Adult birds
+### Visualise: adult shannon
+
+Very unbalanced dataset. Very few conifer birds
+```{r}
+table(adults.meta$habitat,adults.meta$Sex)
+```
+
+```{r}
+ggplot(adults.meta, aes(habitat, shannon, color=Sex)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Shannon diversity")
+```
+
+Plot shannon diversity to assess normality. Shows right skew. 
+* cube-root most normal looking
+
+```{r Plot shannon diversity}
+hist(adults.meta$shannon) # non-normal, right skew, data sparse
+qqnorm((adults.meta$shannon)); qqline((adults.meta$shannon))
+
+hist((adults.meta$shannon)^(1/2)) # non-normal, data sparse, multimodal
+qqnorm(sqrt(adults.meta$shannon)); qqline(sqrt(adults.meta$shannon))
+
+hist((adults.meta$shannon)^(1/3)) # most normal looking, right skew
+qqnorm((adults.meta$shannon)^(1/3)); qqline((adults.meta$shannon)^(1/3))
+
+hist((adults.meta$shannon)^(2)) # not normal
+qqnorm((adults.meta$shannon)^(2)); qqline(sqrt(adults.meta$shannon)^(2))
+
+hist(log(adults.meta$shannon)) # non-normal, left skew 
+qqnorm(log(adults.meta$shannon)); qqline(log(adults.meta$shannon))
+
+```
+
+### Modelling: Adult shannon
+```{r}
+print("mod1")
+mod1 <- lmer((shannon) ~ Sex * habitat + (1|site/nest) + (1|SequencePlate), data = adults.meta)
+print("mod2")
+mod2 <- lmer((shannon)^(1/3) ~ Sex * habitat + (1|site/nest) + (1|SequencePlate), data = adults.meta) 
+print("mod3, converting response to integer so Poisson runs. Multiplying by constant in order not to lose detail.")
+mod3 <- glmer(as.integer(shannon*100) ~ Sex * habitat + (1|site/nest) + (1|SequencePlate), data = adults.meta, family = "poisson")
+```
+
+* mod1 looks poor
+* mod2 looks ok
+* mod3 looks poor
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = mod1, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod2, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod3, n = 250)
+plot(simulationOutput)
+```
+### Visualise: Adult chao1
+
+Note: huge outlier for Male-deciduous
+```{r}
+ggplot(adults.meta, aes(habitat, chao1, color=Sex)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Chao1 diversity")
+```
+
+Plot chao diversity to assess normality. Shows right skew. 
+* cube-root most normal looking
+
+```{r Plot shannon diversity}
+hist(adults.meta$chao1) # non-normal, right skew, data sparse
+qqnorm((adults.meta$chao1)); qqline((adults.meta$chao1))
+
+hist((adults.meta$chao1)^(1/2)) # non-normal, data sparse
+qqnorm(sqrt(adults.meta$chao1)); qqline(sqrt(adults.meta$chao1))
+
+hist((adults.meta$chao1)^(1/3)) # most normal looking, but still non-normal
+qqnorm((adults.meta$chao1)^(1/3)); qqline((adults.meta$chao1)^(1/3))
+
+hist((adults.meta$chao1)^(2)) # not normal
+qqnorm((adults.meta$chao1)^(2)); qqline(sqrt(adults.meta$chao1)^(2))
+
+hist(log(adults.meta$chao1)) # non-normal, multimodal
+qqnorm(log(adults.meta$chao1)); qqline(log(adults.meta$chao1))
+
+```
+### Modelling: Adult chao1
+
+* mod1
+* mod2 fails to converge
+* mod3 singular fit
+```{r}
+print("mod1")
+mod1 <- lmer((chao1) ~ Sex * habitat + (1|site/nest) + (1|SequencePlate), data = adults.meta)
+print("mod2")
+mod2 <- lmer((chao1)^(1/3) ~ Sex * habitat + (1|site/nest) + (1|SequencePlate), data = adults.meta) 
+print("mod3, converting response to integer so Poisson runs. Multiplying by constant in order not to lose detail.")
+mod3 <- glmer(as.integer(chao1*100) ~ Sex * habitat + (1|site/nest) + (1|SequencePlate), data = adults.meta, family = "poisson")
+```
+
+* mod1 looks poor, deviation significant
+* mod2 looks ok, but is  non-convergent
+* mod3 looks poor
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = mod1, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod2, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod3, n = 250)
+plot(simulationOutput)
+```
+
+
+## Nestling birds
+### Visualise: Nestling shannon
+
+Slightly unbalanced dataset. Fewer conifer birds
+```{r}
+table(nestlings.meta$habitat,nestlings.meta$ageBinned)
+```
+
+```{r}
+ggplot(nestlings.meta, aes(habitat, shannon, color=ageBinned)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Shannon diversity")
+```
+
+Plot shannon diversity to assess normality. Shows right skew. 
+* cube-root most normal looking
+
+```{r Plot nestling shannon diversity}
+hist(nestlings.meta$shannon) # non-normal, right skew
+qqnorm((nestlings.meta$shannon)); qqline((nestlings.meta$shannon))
+
+hist((nestlings.meta$shannon)^(1/2)) # non-normal, multimodal
+qqnorm(sqrt(nestlings.meta$shannon)); qqline(sqrt(nestlings.meta$shannon))
+
+hist((nestlings.meta$shannon)^(1/3)) # close to normal looking, right skew
+qqnorm((nestlings.meta$shannon)^(1/3)); qqline((nestlings.meta$shannon)^(1/3))
+
+hist((nestlings.meta$shannon)^(2)) # not normal
+qqnorm((nestlings.meta$shannon)^(2)); qqline(sqrt(nestlings.meta$shannon)^(2))
+
+hist(log(nestlings.meta$shannon)) # close to normal, left skew 
+qqnorm(log(nestlings.meta$shannon)); qqline(log(nestlings.meta$shannon))
+
+```
+### Modelling: Nestling shannon
+
+* mod1
+* mod2
+* mod3
+* mod4
+* all run fine
+```{r}
+print("mod1")
+mod1 <- lmer((shannon) ~ ageBinned * habitat + (1|site/nest) + (1|SequencePlate), data = nestlings.meta)
+print("mod2")
+mod2 <- lmer((shannon)^(1/3) ~ ageBinned * habitat + (1|site/nest) + (1|SequencePlate), data = nestlings.meta) 
+print("mod3, converting response to integer so Poisson runs. Multiplying by constant in order not to lose detail.")
+mod3 <- glmer(as.integer(shannon*100) ~ ageBinned * habitat + (1|site/nest) + (1|SequencePlate), data = nestlings.meta, family = "poisson")
+print("mod4")
+mod4 <- lmer(log(shannon) ~ ageBinned * habitat + (1|site/nest) + (1|SequencePlate), data = nestlings.meta)
+```
+
+* mod1 looks poor, deviation significant
+* mod2 looks ok
+* mod3 looks ok but deviation significant
+* mod4 looks good
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = mod1, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod2, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod3, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod4, n = 250)
+plot(simulationOutput)
+```
+
+### Visualise: Nestling Chao1
+
+Lots of apparent outliers
+```{r}
+ggplot(nestlings.meta, aes(habitat, chao1, color=ageBinned)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Chao1 diversity")
+
+ggplot(nestlings.meta, aes(habitat, chao1, color=ageBinned)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Chao1 diversity") +
+  coord_cartesian(ylim=c(0,2000)) 
+```
+
+```{r Plot nestling shannon diversity}
+hist(nestlings.meta$chao1) # non-normal, strong right skew
+qqnorm((nestlings.meta$chao1)); qqline((nestlings.meta$chao1))
+
+hist((nestlings.meta$chao1)^(1/2)) # non-normal, right skew
+qqnorm(sqrt(nestlings.meta$chao1)); qqline(sqrt(nestlings.meta$chao1))
+
+hist((nestlings.meta$chao1)^(1/3)) # close to normal looking, right skew
+qqnorm((nestlings.meta$chao1)^(1/3)); qqline((nestlings.meta$chao1)^(1/3))
+
+hist((nestlings.meta$chao1)^(2)) # not normal
+qqnorm((nestlings.meta$chao1)^(2)); qqline(sqrt(nestlings.meta$chao1)^(2))
+
+hist(log(nestlings.meta$chao1)) # close to normal, left skew 
+qqnorm(log(nestlings.meta$chao1)); qqline(log(nestlings.meta$chao1))
+
+```
+
+### Modelling: Nestling Chao1
+* mod1 singular
+* mod2 fine
+* mod3 model unidentifiable
+* mod4 singular
+```{r}
+print("mod1")
+mod1 <- lmer((chao1) ~ ageBinned * habitat + (1|site/nest) + (1|SequencePlate), data = nestlings.meta)
+print("mod2")
+mod2 <- lmer((chao1)^(1/3) ~ ageBinned * habitat + (1|site/nest) + (1|SequencePlate), data = nestlings.meta) 
+print("mod3, converting response to integer so Poisson runs. Multiplying by constant in order not to lose detail.")
+mod3 <- glmer(as.integer(chao1*100) ~ ageBinned * habitat + (1|site/nest/bird.ID) + (1|SequencePlate), data = nestlings.meta, family = "poisson")
+print("mod4")
+mod4 <- lmer(log(chao1) ~ ageBinned * habitat + (1|site/nest/bird.ID) + (1|SequencePlate), data = nestlings.meta)
+```
+
+* mod1 looks poor, deviation significant
+* mod2 looks good
+* mod3 looks ok, but model unidentifiable
+* mod4 looks good (best)
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = mod1, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod2, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod3, n = 250)
+plot(simulationOutput)
+
+simulationOutput <- simulateResiduals(fittedModel = mod4, n = 250)
+plot(simulationOutput)
+```
+
+############################################################################
+# BREAK: old model comparison results below
+
+Significant effect of age specifically 2week birds less diverse than 1week birds.  
+* Tried site variable instead of habitat but it was not significant.
+* Adding site and individual random terms which leads to Singular fit ie. model is overfit.
+* Also realised that random terms have nested structure like site/nest/bird.ID. Solutions may include selecting a single sample per nest and a single sample per individual. 1|bird.ID is causing the singular fit.
+* Just including nest and site as random effects still runs fine w/o Singular fit warning.
+* Enrico linked Bolker answer "https://stats.stackexchange.com/questions/242821/how-will-random-effects-with-only-1-observation-affect-a-generalized-linear-mixe" where he suggests- if the minority of groups have >1 obs. then discard or average them. Averaging is incorrect in my case because im looking at age difference so discarding them is possibly the best answer.
+
+* lmer now running w/o Singular fit warning. Why? Some individuals dropped maybe (metadata has n=217, previous report had n=220) so possibly being driven by an outlier or something.
+  ** setdiff(old.samples,new.samples) = "KB1-A-15-137.S92"   "KB905-F-15-178.S43" "LS2B-D8.S20"        "SP16-A-D15.S62"  
+  ** setdiff(current.samples, OG.samples) = "SP11C-228.S38"
+* ageBinned2week is significant in model w/o age*habitat interaction
+* habitatdeciduous:ageBinned2week term in interaction model approaches significance p=0.085 
+
+* Sqrt(shannon) as brings it closer to normality.
+* ageBinned still significant, Edge almost significant
+* age*habitat interaction not significant
+* pearson residuals look better
+* simulated residuals not neccessary for gaussian models
+```{r All birds shannon model-maximal, echo=TRUE}
+null.lm <- lmer(sqrt(shannon) ~  (1|site/nest/bird.ID), data = metadata)
+lm <- lmer(sqrt(shannon) ~ habitat + ageBinned + DistanceToEdge + (1|site/nest/bird.ID), data = metadata)
+# lm <- lmer(shannon ~ habitat * ageBinned + DistanceToEdge + (1|site/nest/bird.ID), data = metadata)
+
+anova(null.lm,lm)
+summary(lm)
+```
+
+LRT's indicated that site and bird ID were not neccessary as random effects.
+*estimates virtually no different than maximal model above*
+```{r All birds shannon model-select random}
+shannon.lmer <- lmer(sqrt(shannon) ~  habitat + ageBinned + DistanceToEdge + (1|nest), data = metadata)
+summary(shannon.lmer)
+
+#anova(shannon.lmer, lm, refit=F)
+```
+
+```{r}
+# residuals for maximal model
+hist(resid(lm))
+plot(lm)
+# residuals for selected model
+hist(resid(shannon.lmer))
+plot(shannon.lmer)
+```
+
+Plot linear model. Not sure what the predict function is doing as im not feeding it any new data. Only nestlings in deciduous habitats seem to decrease in shannon diversity between 1week-2week while coniferous birds seem to increase. Both habitat types show apparent increase in diversity between 2week-adult.  
+
+```{r}
+ggplot(metadata, aes(x=ageBinned, y=shannon, colour=habitat)) +
+  geom_point(size=3) +
+  geom_line(aes(y=predict(lm), group=habitat)) 
+#+
+ # geom_line(data=newdat, aes(y=predict(lm, level=0, newdata=newdat), size="Population")) +
+  #scale_size_manual(name="Predictions", values=c("Subjects"=0.5, "Population"=3)) +
+  #theme_bw(base_size=22) 
+```
+
+Plot of all birds chao diversity. Data is right skewed. Log(chao) is quite normal.  
+
+```{r Plot All birds chao diversity, echo=FALSE}
+hist(metadata$chao1) # non-normal, right skew
+
+hist(sqrt(metadata$chao1)) # near normal, right skew
+shapiro.test(sqrt(metadata$chao1)) # rejects H0
+
+hist(log(metadata$chao1)) # pretty normal
+shapiro.test(log(metadata$chao1)) # supports H0
+
+qqnorm((metadata$chao1)); qqline((metadata$chao1))
+qqnorm(log(metadata$chao1)); qqline(log(metadata$chao1))
+```
+
+Log(chao1) model
+* Age effect apparent. 
+* Residuals look good in log(chao) model.
+* Interaction between ageBinned*habitat was non-significant.
+* Singular fit when site/individual level effect added
+  * estimates exactly the same when site/bird.ID dropped- is this to be expected because the variance is 0?
+```{r All birds chao model-maximal}
+lm.null <- lmer(log(chao1) ~ (1|site/nest/bird.ID), data = metadata)
+lm.chao <- lmer(log(chao1) ~ habitat + ageBinned + DistanceToEdge + (1|site/nest/bird.ID), data = metadata)
+
+anova(lm.null, lm.chao)
+summary(lm.chao)
+
+```
+
+LRT and AIC indicate that null model is the best model. No random effects required.
+*Distance becomes significant in select model*
+```{r, eval=FALSE}
+#lm.chao.full <- lmer(log(chao1) ~ habitat + ageBinned + DistanceToEdge + (1|site/nest/bird.ID), data = metadata)
+lm.chao.dropped <- lm(log(chao1) ~ habitat + ageBinned + DistanceToEdge, data = metadata)
+
+#anova(lm.chao.full, lm.chao.dropped)
+summary(lm.chao.dropped)
+```
+
+```{r}
+plot(lm.chao)
+```
+
+```{r}
+plot(lm.chao.dropped)
+```
+
+```{r}
+simOut <- simulateResiduals(lm.chao, n = 1000)
+plot(simOut)
+```
+
+Plot of log(chao) lm.  
+```{r}
+ggplot(metadata, aes(x=ageBinned, y=log(chao1), colour=habitat)) +
+  geom_point(size=3) +
+  geom_line(aes(y=predict(lm), group=habitat)) 
+```
+
+## Adult birds: Sex, edge, habitat
+### Visualise: Alpha diversity
+
+Adult birds (n=43).
+
+Boxplots of alpha diversity for adult birds only, comparing sexes. Possible difference in shannon diversity between males/females in coniferous habitats.  
+
+```{r}
+shannon.boxplot <- ggplot(adults.meta, aes(habitat, shannon, color=Sex)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Shannon diversity")
+
+chao.boxplot <- ggplot(adults.meta, aes(habitat, chao1, color=Sex)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Chao diversity")
+
+grid.arrange(shannon.boxplot,chao.boxplot, ncol=2)
+```
+
+Plot shannon diversity to assess normality. Shows right skew. Sqrt(shannon) and log(shannon) is quite normal.  
+
+```{r Plot shannon diversity}
+hist(adults.meta$shannon) # close to normal, right skew, data sparse
+shapiro.test(adults.meta$shannon) # supports H0
+
+hist((adults.meta$shannon)^(1/2)) # close to normal, data sparse
+shapiro.test((adults.meta$shannon)^(1/2)) # supports h0
+
+hist((adults.meta$shannon)^(1/3)) # most normal looking
+shapiro.test((adults.meta$shannon)^(1/3)) # supports h0
+
+hist((adults.meta$shannon)^(2)) # not normal
+shapiro.test((adults.meta$shannon)^(2)) # H0 rejected
+
+hist(log(adults.meta$shannon)) # close to normal, left skew 
+shapiro.test(log(adults.meta$shannon)) # supports H0
+```
+
+No real difference in shannon vs sqrt(shannon).
+```{r, eval=FALSE, results='hide'}
+qqnorm((adults.meta$shannon)); qqline((adults.meta$shannon))
+qqnorm(sqrt(adults.meta$shannon)); qqline(sqrt(adults.meta$shannon))
+qqnorm(log(adults.meta$shannon)); qqline(log(adults.meta$shannon))
+```
+
+Plot chao diversity to assess normality. Shows right skew. Sqrt(chao) looks more normal, some departures from normality.  
+```{r}
+hist(adults.meta$chao1)
+shapiro.test(adults.meta$chao1) # rejects H0
+
+hist(sqrt(adults.meta$chao1))
+shapiro.test(sqrt(adults.meta$chao1)) # supports h0
+
+qqnorm(sqrt(adults.meta$chao1)); qqline(sqrt(adults.meta$chao1))
+```
+
+### Modelling: Alpha diversity
+
+Simple linear model looking at adult factors effect on shannon diversity, particularly Sex. 
+* Also tried sex*habitat interaction as boxplot suggests Male and female birds in coniferous habitats have different shannon diversities but it was non-significant. However residuals show structure so can probably improve model.
+* is individual level random term neccessary as all individuals only sampled once? 
+  ** Getting "Error: number of levels of each grouping factor must be < number of observations", when using individual level random term
+* getting Singular fit w/ "sex *+ habitat + Distance + brood + layDate + (1|site/nest)" model
+* No Singular fit simpler w/ "sex * habitat + (1|site/nest)" model (nothing significant)
+* DW30F-275.S36 has NA for broodSize (fixed in Data cleaning)
+* BroodSizeWhenSampled may be better than broodSize however it is NA for all adult samples (cant find what datasheet it comes from)
+* not significantly different to null model
+* habitat is very unbalanced, 6 confirerous and 37 deciduous samples
+
+* shannon^1/3 has more normal distribution than shannon
+* still has singular fit
+* some structure evident in residuals
+* not significantly different to null
+* nothing significant in Sex*habitat model
+* Sex almost significant in no interaction model
+```{r Adult shannon model-maximal, echo=TRUE}
+# Can update this chunk to use glmms (random effects and non-normal error structures).
+#lmer.shannon <- lmer(sqrt(shannon) ~ Sex * habitat + (1|site/nest), data = adults.meta)
+lmer.null <- lmer((shannon)^(1/3) ~ (1|site/nest), data = adults.meta.scaled)
+
+lmer.shannon <- lmer((shannon)^(1/3) ~ Sex + habitat + DistanceToEdge + broodSizeMax + layDateFirst + (1|site/nest), data = adults.meta.scaled) # singular fit
+summary(lmer.shannon)
+
+anova(lmer.null,lmer.shannon)
+```
+
+Testing random effect structure of adult shannon model
+* Neither are significantly different to null model.
+* null model (model w/o random terms) has lowest AIC
+* Dropping site as random effect seems to get rid of Singular fit warning
+  ** Is there any effect on estimates/residuals if nest included as random?
+Testing fixed
+* interaction not significant
+* no variables significant
+*Virtually no difference in estimates between maximal and select models*
+```{r Adult shannon model-select}
+shannon.lm <- lm((shannon)^(1/3) ~ Sex + habitat + DistanceToEdge + broodSizeMax + layDateFirst, data = adults.meta.scaled)
+#shannon.lmer <- lmer((shannon)^(1/3) ~ Sex + habitat + DistanceToEdge + broodSizeMax + layDateFirst + (1|nest), data = adults.meta.scaled)
+summary(shannon.lm)
+```
+
+```{r}
+plot(lmer.shannon)
+```
+```{r}
+plot(shannon.lm)
+#plot(shannon.lmer)
+```
+
+Plot of adult lm residuals. Structure evident.  
+
+```{r}
+plot(lmer.shannon)
+```
+
+```{r}
+simOut <- simulateResiduals(lmer.shannon, n = 1000)
+plot(simOut)
+```
+
+Simple linear model looking at chao diversity. 
+* Using sqrt(chao) as response as closer to normality.
+* not using individual level random term as all individuals only measured once
+* singular fit if individual level random effect is used, not sure if its neccessary
+* no variables significant as expected following boxplot
+* w/ and w/o interaction models have nothing significant
+```{r Adult chao model-maximal, echo=TRUE}
+lmer.chao <- lmer(sqrt(chao1) ~ Sex * habitat + DistanceToEdge + broodSizeMax + layDateFirst + (1|site/nest), data = adults.meta.scaled)
+summary(lmer.chao)
+```
+Model selection
+* best random effects structure according to LRT is (1|site)
+* model w/o Sex * habitat not significantly different therefore can drop interaction
+* no variables significant
+*estimates no different in maximal and select models*
+```{r Adult chao model-select}
+chao.lmer <- lmer(sqrt(chao1) ~ Sex + habitat + DistanceToEdge + broodSizeMax + layDateFirst + (1|site), data = adults.meta.scaled)
+summary(chao.lmer)
+```
+
+```{r}
+plot(lmer.chao)
+```
+
+```{r}
+plot(chao.lmer)
+```
+
+## Nestlings
+ Is it worth including a nestling-level analysis?
+ * age and distance are only significant variables d=so not really adding new info.
+ 
+### Modelling: Alpha diversity
+
+Maximal model
+* singular fit
+* nothing significant in interaction models but Distance and age*habitat interaction close
+* age significant if interaction w/ habitat is dropped
+```{r Nestlings shannon model-maximal}
+lmer.shannon <- lmer(sqrt(shannon)~ ageBinned*habitat + broodSizeWhenSampled + DistanceToEdge + layDateFirst*habitat + (1|site/nest/bird.ID), data = nestlings.meta.scaled)
+
+lmer.shannon <- lmer(sqrt(shannon)~ ageBinned*habitat + broodSizeWhenSampled + DistanceToEdge + layDateFirst + (1|site/nest/bird.ID), data = nestlings.meta.scaled)
+
+lmer.shannon <- lmer(sqrt(shannon)~ ageBinned + habitat + broodSizeWhenSampled + DistanceToEdge + layDateFirst + (1|site/nest/bird.ID), data = nestlings.meta.scaled)
+
+summary(lmer.shannon)
+```
+
+Find optimum random effects structure for nestlings shannon
+* (1|nest) is only neccessary random effect
+* though random.site.nest has lowest AIC, then random.nest then random.site.nest.bird
+* including (1|nest/bird.ID) as random effect leads to Singular fit
+Find optimum fixed effect structure.
+* dropped age*habitat interaction and age becomes significant
+* drop broodSize and Distance becomes significant
+*no difference at all in estimates when bird.ID dropped as random term*
+```{r Nestlings shannon model-select, echo=TRUE}
+shannon.lmer <- lmer(sqrt(shannon)~ ageBinned + habitat + DistanceToEdge + layDateFirst + (1|site/nest), data = nestlings.meta.scaled)
+summary(shannon.lmer)
+```
+
+```{r}
+plot(shannon.lmer)
+```
+
+```{r Nestlings chao model-maximal}
+lmer.chao <- lmer(log(chao1)~ ageBinned*habitat + broodSizeWhenSampled + DistanceToEdge + layDateFirst*habitat + (1|site/nest/bird.ID), data = nestlings.meta.scaled)
+
+lmer.chao <- lmer(log(chao1)~ ageBinned + habitat + broodSizeWhenSampled + DistanceToEdge + layDateFirst + (1|site/nest/bird.ID), data = nestlings.meta.scaled)
+
+summary(lmer.chao)
+```
+
+Check random effect structure
+* all random effects unneccessary, none significantly different to null
+Check fixed effects
+* interactions are not important
+* age and distance are significant
+*all p-values lower and estimates higher in model-select (no random terms)*
+*Distance becomes significant w/o random effects*
+*LRT says maximal/select models not significantly different*
+*Residuals look better in maximal model*
+**Re-added (1|nest) as residuals look better**
+**Now distance no longer significant **
+**Adding (1|site/nest) means estimates are exactly the same as maximal**
+```{r Nestlings chao model-select}
+chao.lm <- lmer(log(chao1)~ ageBinned + habitat + broodSizeWhenSampled + DistanceToEdge + layDateFirst + (1|nest), data = nestlings.meta.scaled)
+summary(chao.lm)
+
+anova(lmer.chao,chao.lm, refit=F)
+```
+
+```{r}
+plot(lmer.chao)
+```
+
+```{r}
+hist(resid(chao.lm))
+plot(fitted(chao.lm),resid(chao.lm, "pearson"))
+plot(chao.lm)
+```
+
+## Nestlings, paired samples: Age and habitat
+
+Some nestlings were sampled around D8 and D15. These can be used to look at development over time at an individual level. Need to remove samples for birds measured more than 2x. Removing median aged (D9/D10) sample so as to get largest difference.
+```{r Extract paired sample data}
+indiv.table <- table(metadata$bird.ID)
+paired.table <- subset(indiv.table,indiv.table>1)
+paired.IDs <- rownames(paired.table)
+
+#paired.D8.shannon <- metadata[(metadata$bird.ID %in% paired.IDs) && (metadata$ageBinned=="1week"),"shannon"]
+
+# subset df instead
+paired.df <- subset(metadata, bird.ID %in% paired.IDs & (ageBinned=="1week"|ageBinned=="2week"))
+
+# remove samples >2
+#which(indiv.table>2) #CB60C=3, KB922B=3, KB924B=3
+remove.paired <- c("KB922B-D10.S84", "CB60-C-D9.S22", "KB924-B-9-201.S89") 
+paired.df <- subset(paired.df, !BIOM.ID %in% remove.paired)
+
+# match paired samples
+paired.d8 <- subset(paired.df,ageBinned=="1week")
+paired.d15 <- subset(paired.df,ageBinned=="2week")
+
+paired.matched <- merge(paired.d8[,c("ageBinned","shannon","chao1","bird.ID")],paired.d15[,c("ageBinned","shannon","chao1","bird.ID")], by = "bird.ID")
+
+```
+### Visualise: Alpha diversity
+
+A number of nestlings (n=33) were sampled twice, so we can look at individual change over time.
+
+Boxplot comparing age groups and habitat types.
+Shannon
+* Possible difference between age groups in deciduous habitat, no such difference in coniferous
+* Possible difference in D8's between habitats, no such difference evident in D15's
+Chao
+* No clear difference between age groups in same habitat type
+* Possible difference between D8's across habitats, no such difference in D15's
+```{r}
+shannon.boxplot <- ggplot(paired.df, aes(habitat, shannon, color=ageBinned)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Shannon diversity")
+
+chao.boxplot <- ggplot(paired.df, aes(habitat, chao1, color=ageBinned)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Chao diversity")
+
+grid.arrange(shannon.boxplot,chao.boxplot, ncol=2)
+```
+
+Shannon diversity is approximately normal.  
+
+```{r}
+hist(paired.df$shannon)
+shapiro.test(paired.df$shannon) # supports h0
+qqnorm((paired.df$shannon));qqline((paired.df$shannon))
+```
+
+### Modelling: Alpha diversity
+
+Data no longer looks normal following removal of low-read samples but shapiro test says its normal. Non-parametric paired t-test which indicated no significant difference between birds at 1 week and 2 weeks for either measure of alpha diversity.
+```{r}
+## Paired wilcoxon test indicates no significant difference between birds at 1 week and 2 weeks.
+wilcox.test(paired.matched$shannon.x, paired.matched$shannon.y, paired = T, alternative = "greater")
+#wilcox.test(paired.matched$chao1.x, paired.matched$chao1.y, paired = T, alternative = "greater")
+
+#t.test(paired.matched$shannon.x, paired.matched$shannon.y, paired = T, alternative = "greater")
+#t.test(paired.matched$chao1.x, paired.matched$chao1.y, paired = T, alternative = "greater")
+
+```
+
+Linear model testing age effect on shannon diversity w/ random effect of individual shows no significant effect. 
+* neither age or habitat significant
+* added layDateFirst, not significant
+* added broodSizeWhenSampled, not significant
+* w/ both layDateFirst and broodSizeWhenSampled in model it no longer converges
+```{r, echo=TRUE}
+# random intercept
+paired.lm <- lmer((shannon) ~ ageBinned * habitat + layDateFirst + (1|site/nest/bird.ID), data = paired.df)
+summary(paired.lm)
+```
+
+```{r}
+plot(paired.lm) # simple lmm residuals show pattern
+```
+```{r}
+simOut <- simulateResiduals(paired.lm, n = 1000)
+plot(simOut)
+```
+
+```{r}
+ggplot(paired.df, aes(x=ageBinned, y=shannon, colour=habitat)) +
+  geom_point(size=3) +
+  geom_line(aes(y=predict(paired.lm), group=habitat)) 
+```

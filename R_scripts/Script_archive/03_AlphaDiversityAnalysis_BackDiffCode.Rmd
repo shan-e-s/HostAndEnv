@@ -1,0 +1,606 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Host and Env drivers of microbiome. This script integrates the Backward Difference Coding' scheme, allowing me to drop the nestlings subset model of previous analyses.
+
+This script comes from the 'HostAndEnvironmentalDriversAnalysis_BDC' but will be limited to alpha diversity analyses only. this script will contain the alpha diversity global models and then, following model selection in the 'xxx' script, a refined model will also be presented.
+
+# Set-up and libraries
+
+```{r Housekeeping, echo=FALSE}
+rm(list=ls())
+#set.seed(10)
+```
+
+
+```{r Set-up, message=FALSE, echo=FALSE}
+# libraries
+#install.packages("tidyverse", dependencies = T)
+library(vegan)  ##note had trouble installing, needed to install gfortran first
+library(Rmisc)
+library(tidyverse) #
+library(phyloseq) 
+library(lme4)
+library(microbiome)
+library(gridExtra)
+library(ggpubr)
+library(lmerTest) # NOTE: overloads lme4 and extends test to provide p-values AND therefore causes DHARMa to give a warning but doesnt appear to effect it
+library(DHARMa)
+library(kableExtra)
+library(effects)
+library(emmeans)
+```
+
+```{r Read in data, warning=FALSE, echo=FALSE}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+
+phylo.spring
+```
+
+# Data cleaning
+
+```{r Data splits, echo=FALSE}
+# relevel ageBinned factor
+metadata$ageBinned <- relevel(metadata$ageBinned, "1week")
+
+# relevel habitat
+metadata$habitat <- relevel(metadata$habitat, "deciduous")
+
+# Split data into adult and nestlings. Use ageBinned("1week","2week","adult").
+# subset to nestlings
+## alt use meta() to extract metadata as df
+# phylo.nestlings <- subset_samples(phylo.spring, ageBinned=="1week"|ageBinned=="2week")
+# nestlings.meta <- meta(phylo.nestlings@sam_data)
+# 
+# # subset to adults
+phylo.adults <- subset_samples(phylo.spring, ageBinned=="adult")
+adults.meta <- meta(phylo.adults@sam_data)
+
+# relevel habitat
+adults.meta$habitat <- relevel(adults.meta$habitat, "deciduous")
+```
+
+```{r}
+numeric.predictors <- c("QubitDNA","Tarsus","Weight", "wing", "broodSizeWhenSampled", "broodSizeMax", "totalFledge", "clutchSize", "layDateFirst", "numberDeadPreRinged", "numberDeadPostRinged","scaled.mass","scaled.mass.wing.adult", "scaled.mass.tarsus.adult","scaled.mass.chick", "scaled.mass.tarsus", "scaled.mass.wing", "DistanceToEdge")
+
+# centre and scale numeric variables ie. subtract mean and divide by st. deviation
+metadata.scaled <- metadata
+metadata.scaled[,numeric.predictors] <- scale(metadata.scaled[,numeric.predictors])
+
+adults.meta.scaled <- adults.meta
+adults.meta.scaled[,numeric.predictors] <- scale(adults.meta.scaled[,numeric.predictors])
+# 
+# nestlings.meta.scaled <- nestlings.meta
+# nestlings.meta.scaled[,numeric.predictors] <- scale(nestlings.meta.scaled[,numeric.predictors])
+
+```
+
+# All birds shannon global model
+
+```{r}
+hist(metadata$shannon)
+hist(log(metadata$shannon))
+
+#table(metadata$ageBinned, metadata$habitat)
+```
+
+Plot raw data, diversity by age and habitat.
+```{r}
+## summarySE provides the standard deviation, standard error of the mean, and a (default 95%) confidence interval
+summ.meta <- summarySE(metadata, measurevar="shannon", groupvars=c("habitat","ageBinned")) 
+
+# rename cols so plot is nicer
+summ.meta <- summ.meta %>% dplyr::rename("Habitat"="habitat")
+
+pd <- position_dodge2(padding = 0.1, width = 0.1)
+
+g1 <- ggplot(summ.meta, aes(x=ageBinned, y=shannon, colour=Habitat)) + 
+    geom_errorbar(aes(ymin=shannon-se, ymax=shannon+se), width=.1,position=pd) +
+    geom_line(position=pd) +
+    geom_point(position=pd, size=3) +
+    xlab("Age") +
+    ylab("Shannon diversity") +
+    scale_x_discrete(labels=c("1week"="Day-8", "2week"="Day-15", "adult"="Adult")) +
+    theme_pubr(base_size = 20) +
+    theme(axis.title = element_text(face="bold")) 
+
+g1
+## geting warning about "one obs." because i am just feeding it the summary stats directly, rather than the raw data
+```
+
+
+Plot shannon diversity to assess normality. Shows right skew. 
+* Both cube-root and Log-shannon is close to normality but H0 rejected by shapiro.
+
+```{r}
+my.backward.diff = matrix(c(-2/3, 1/3, 1/3, -1/3, -1/3, 2/3), ncol = 2)
+my.backward.diff
+```
+
+```{r}
+levels(metadata.scaled$ageBinned) # verify: 1week,2week,adult
+#assigning the backward difference coding to ageBinned
+contrasts(metadata.scaled$ageBinned) = my.backward.diff
+```
+
+* residuals are better with log(shannon) than untransformed shannon
+* ageBinned1 estimate is difference between 2week-1week
+* ageBinned2 estimate/coefficient is difference between adult-2week
+* what is intercept? Sample mean? or grand mean? Mean of week1?
+```{r}
+#metadata.scaled$habitat <- relevel(metadata.scaled$habitat, "conifer")
+
+all.shannon.global <- lmer(log(shannon) ~ ageBinned * habitat * layDateFirst + ageBinned * broodSizeWhenSampled + habitat*DistanceToEdge +  (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata.scaled)
+summary(all.shannon.global)
+
+#$Save results in variable
+summary.all.shannon.global <- summary(all.shannon.global)[["coefficients"]]
+```
+
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = all.shannon.global, n = 250)
+plot(simulationOutput)
+```
+
+How does my interpretation of this plot change now that im using Backwards difference coding?
+
+Better plot
+* why NA values in levels call?
+* nestlings converge on similar diversity across habitats as they age
+```{r}
+all.shannon.global.effects <- effect("ageBinned:habitat", all.shannon.global)
+all.shannon.global.effects <- as.data.frame(effect("ageBinned:habitat", all.shannon.global))
+
+ggplot(all.shannon.global.effects, aes(x=ageBinned, y=fit, color=habitat,group=habitat)) + 
+    geom_point() + 
+    geom_line(size=1.2) +
+    geom_ribbon(aes(ymin=fit-se, ymax=fit+se, fill=habitat),alpha=0.3) +
+    theme_classic() + theme(text=element_text(size=20)) #+labs(title = "Reactivity by Daily Control Beliefs", x= "Daily Stressor (0=Did not occur, 1=Occurred)", y="Negative Affect", color="Daily Control Beliefs", fill="Daily Control Beliefs")
+```
+
+Plot distance by shannon
+```{r}
+effects_distance <- effects::effect(term= c("DistanceToEdge", "habitat"), mod= all.shannon.global)
+#summary(effects_distance) #output of what the values are
+
+x_dist <- as.data.frame(effects_distance)
+
+ggplot(x_dist, aes(x=DistanceToEdge, y=fit, color=habitat,group=habitat)) + 
+    geom_point() + 
+    geom_line(size=1.2) +
+    geom_ribbon(aes(ymin=fit-se, ymax=fit+se, fill=habitat),alpha=0.3) +
+    theme_classic() + theme(text=element_text(size=20))
+```
+
+## Check for outliers
+ no apparent outliers
+```{r}
+summary(metadata$shannon)
+which(metadata$shannon==max(metadata$shannon)) #172
+
+hist(metadata$shannon)
+```
+
+# All birds shannon select model
+
+```{r}
+all.shannon.select <-  lmer(log(shannon) ~ ageBinned * habitat + layDateFirst + broodSizeWhenSampled + habitat*DistanceToEdge +  (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata.scaled)
+summary(all.shannon.select)
+```
+
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = all.shannon.select, n = 250)
+plot(simulationOutput)
+```
+
+```{r}
+all.shannon.select.effects <- effect("ageBinned:habitat", all.shannon.select)
+all.shannon.select.effects <- as.data.frame(effect("ageBinned:habitat", all.shannon.select))
+
+ggplot(all.shannon.select.effects, aes(x=ageBinned, y=fit, color=habitat,group=habitat)) + 
+    geom_point() + 
+    geom_line(size=1.2) +
+    geom_ribbon(aes(ymin=fit-se, ymax=fit+se, fill=habitat),alpha=0.3) +
+    theme_classic() + theme(text=element_text(size=20)) #+labs(title = "Reactivity by Daily Control Beliefs", x= "Daily Stressor (0=Did not occur, 1=Occurred)", y="Negative Affect", color="Daily Control Beliefs", fill="Daily Control Beliefs")
+```
+
+Interesting that deciduous birds appear to be more affected by distance to edge than coniferous considering coniferous denser and more homogenous than deciduous. Though maybe this is because all coniferous irds are close to forest edge anyway. Or deciduous sites have different plant and insect species at edge than more internally.
+
+Plot of individual age groups confirms overall trend of neutral effect of distance in conifer and positive effect of distance in deciduous sites.
+```{r}
+effects_distance.select <- effects::effect(term= c("DistanceToEdge", "habitat"), mod= all.shannon.select)
+#summary(effects_distance) #output of what the values are
+
+effects_distance.select <- as.data.frame(effects_distance.select)
+
+ggplot(effects_distance.select, aes(x=DistanceToEdge, y=fit, color=habitat, group=habitat)) + 
+    geom_point() + 
+    geom_line(size=1.2) +
+    geom_ribbon(aes(ymin=fit-se, ymax=fit+se, fill=habitat),alpha=0.3) +
+    theme_classic() + theme(text=element_text(size=20))
+
+effects_distance.select <- effects::effect(term= c("DistanceToEdge", "habitat", "ageBinned"), mod= all.shannon.select)
+effects_distance.select.ages <- as.data.frame(effects_distance.select)
+
+# consistent across age groups
+ggplot(effects_distance.select.ages, aes(x=DistanceToEdge, y=fit, color=habitat, group=habitat)) + 
+    geom_point() + 
+    geom_line(size=1.2) +
+    geom_ribbon(aes(ymin=fit-se, ymax=fit+se, fill=habitat),alpha=0.3) +
+    facet_wrap(~ageBinned) +
+    theme_classic() + theme(text=element_text(size=20))
+```
+
+# All birds chao1 global model
+
+```{r}
+hist(metadata$chao1) # very skewed
+hist(log(metadata$chao1)) # normalish, slight left skew
+
+```
+
+Plot raw data
+```{r}
+## summarySE provides the standard deviation, standard error of the mean, and a (default 95%) confidence interval
+summ.meta <- summarySE(metadata, measurevar="chao1", groupvars=c("habitat","ageBinned"))
+
+pd <- position_dodge2(padding = 0.1, width = 0.1)
+
+g1 <- ggplot(summ.meta, aes(x=ageBinned, y=chao1, colour=habitat)) + 
+    geom_errorbar(aes(ymin=chao1-se, ymax=chao1+se), width=.1,position=pd) +
+    geom_line(position=pd) +
+    geom_point(position=pd, size=3)
+
+g1
+## geting warning about "one obs." because i am just feeding it the summary stats directly, rather than the raw data
+```
+
+Singular fit due to individual ID random term
+```{r}
+all.chao.global0 <- lmer(log(chao1) ~ ageBinned * habitat * layDateFirst + ageBinned * broodSizeWhenSampled + habitat*DistanceToEdge + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata.scaled)
+summary(all.chao.global0)
+```
+
+Drop individual level random term
+```{r}
+all.chao.global <- lmer(log(chao1) ~ ageBinned * habitat * layDateFirst + ageBinned * broodSizeWhenSampled + habitat*DistanceToEdge + (1|site/nest) + (1|SequencePlate), data = metadata.scaled)
+summary(all.chao.global)
+```
+
+OUTLIER TEST SIGNIFICANT
+RESIDUAL VS PREDICTED A LIL GOOSEY
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = all.chao.global, n = 250)
+plot(simulationOutput)
+```
+
+Is this plot informative on simple age effects or only useful in visualising interaction?
+```{r}
+all.chao.global.effects <- effect("ageBinned:habitat", all.chao.global)
+all.chao.global.effects <- as.data.frame(effect("ageBinned:habitat", all.chao.global))
+
+ggplot(all.chao.global.effects, aes(x=ageBinned, y=fit, color=habitat,group=habitat)) + 
+    geom_point() + 
+    geom_line(size=1.2) +
+    geom_ribbon(aes(ymin=fit-se, ymax=fit+se, fill=habitat),alpha=0.3) +
+    theme_classic() + theme(text=element_text(size=20))
+
+#+labs(title = "Reactivity by Daily Control Beliefs", x= "Daily Stressor (0=Did not occur, 1=Occurred)", y="Negative Affect", color="Daily Control Beliefs", fill="Daily Control Beliefs")
+```
+
+Plot of age fixed effect by habitat, no interaction.
+```{r}
+all.chao.global.effects.age <- effect(c("ageBinned","habitat"), all.chao.global)
+all.chao.global.effects.age <- as.data.frame(effect(c("ageBinned","habitat"), all.chao.global))
+
+ggplot(all.chao.global.effects.age, aes(x=ageBinned, y=fit, color=habitat, group=habitat)) + 
+    geom_point() + 
+    geom_line(size=1.2) +
+    geom_ribbon(aes(ymin=fit-se, ymax=fit+se, fill=habitat),alpha=0.3) +
+    theme_classic() + theme(text=element_text(size=20))
+
+#+labs(title = "Reactivity by Daily Control Beliefs", x= "Daily Stressor (0=Did not occur, 1=Occurred)", y="Negative Affect", color="Daily Control Beliefs", fill="Daily Control Beliefs")
+```
+
+# Plot adult alpha diversity
+
+Very few conifer adult samples, particularly when divided by sex
+```{r}
+table(adults.meta$habitat, adults.meta$Sex)
+```
+
+Plot raw data, diversity by age and habitat.
+```{r}
+## summarySE provides the standard deviation, standard error of the mean, and a (default 95%) confidence interval
+summ.meta.adult <- summarySE(adults.meta, measurevar="shannon", groupvars=c("habitat","Sex")) 
+
+# rename cols so plot is nicer
+summ.meta.adult <- summ.meta.adult %>% dplyr::rename("Habitat"="habitat")
+
+pd <- position_dodge2(padding = 0.1, width = 0.1)
+
+g2 <- ggplot(summ.meta.adult, aes(x=Sex, y=shannon, colour=Habitat)) + 
+    geom_errorbar(aes(ymin=shannon-se, ymax=shannon+se), width=.1,position=pd) +
+    geom_line(position=pd) +
+    geom_point(position=pd, size=3) +
+    xlab("Sex") +
+    ylab("Shannon diversity") +
+  #  scale_x_discrete(labels=c("1week"="Day-8", "2week"="Day-15", "adult"="Adult")) +
+    theme_pubr(base_size = 20) +
+    theme(axis.title = element_text(face="bold")) 
+
+g2
+## geting warning about "one obs." because i am just feeding it the summary stats directly, rather than the raw data
+```
+
+# Adult shannon global model
+
+Model singular when site included as random effect, so dropped for global model
+* setting REML=T (default) makes signficant terms non-significant
+```{r}
+adult.shannon.global <- lmer((shannon)^(1/3) ~ Sex * habitat * broodSizeWhenSampled + Sex * habitat * layDateFirst + habitat * DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.meta.scaled)
+summary(adult.shannon.global)
+```
+
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = adult.shannon.global, n = 250)
+plot(simulationOutput)
+```
+
+# Adult shannon select model
+
+Model selection indicated to drop all interactions.
+```{r}
+adult.shannon.select <- lmer((shannon)^(1/3) ~ Sex + broodSizeWhenSampled + habitat + layDateFirst +  DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.meta.scaled)
+
+summary(adult.shannon.select)
+```
+
+
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = adult.shannon.select, n = 250)
+plot(simulationOutput)
+```
+
+# Adult chao1 global model
+
+```{r}
+#adults.meta.scaled$habitat <- relevel(adults.meta.scaled$habitat, "deciduous")
+# adults.meta.scaled$Sex <- relevel(adults.meta.scaled$Sex, "Fe")
+
+adult.chao.global <- lmer(log(chao1) ~ Sex * habitat * broodSizeWhenSampled + Sex * habitat * layDateFirst + habitat * DistanceToEdge + (1|site/nest) + (1|SequencePlate), data = adults.meta.scaled)
+
+summary(adult.chao.global)
+```
+
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = adult.chao.select, n = 250)
+plot(simulationOutput)
+```
+
+# Adult chao1 select model
+
+```{r}
+adult.chao.select <- lmer(log(chao1) ~ Sex * habitat + broodSizeWhenSampled + layDateFirst + habitat * DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.meta.scaled)
+
+summary(adult.chao.select)
+```
+
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = adult.chao.select, n = 250)
+plot(simulationOutput)
+```
+
+#-------
+# BREAK
+#-------
+## Adult birds
+
+### Modelling:shannon
+
+Plot shannon diversity to assess normality. 
+* Shows right skew, shapiro rejects H0.
+* Cube root is most normal looking.
+* though log is most supported by shapiro
+```{r}
+hist(adults.meta$shannon) #right skew
+hist(log(adults.meta$shannon)) #weird shape
+hist((adults.meta$shannon)^(1/3)) #right skew
+```
+
+* residuals better, but not great, for log and cube-root than untransformed
+* nothing significant
+```{r Adult shannon model-maximal, results='hide'}
+#adults.meta.scaled$habitat <- relevel(adults.meta.scaled$habitat, "deciduous")
+# adults.meta.scaled$Sex <- relevel(adults.meta.scaled$Sex, "Fe")
+
+ad.sh.lmm <- lmer((shannon)^(1/3) ~ Sex * habitat * broodSizeWhenSampled + habitat * layDateFirst + habitat * DistanceToEdge + (1|site/nest) + (1|SequencePlate), data = adults.meta.scaled)
+
+summary(ad.sh.lmm)
+```
+
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = ad.sh.lmm, n = 250)
+plot(simulationOutput)
+```
+
+### Modelling: chao
+```{r}
+hist(adults.meta$chao1) #huge right skew
+hist(log(adults.meta$chao1)) # bimodal but most normal
+hist((adults.meta$chao1)^(1/3)) #bimodal
+```
+
+* nothing significant
+* residuals poor
+```{r Adult chao model-maximal, results='hide'}
+# adults.meta.scaled$habitat <- relevel(adults.meta.scaled$habitat, "deciduous")
+# adults.meta.scaled$Sex <- relevel(adults.meta.scaled$Sex, "Fe")
+
+ad.chao.lmm <- lmer(log(chao1) ~ Sex * habitat * broodSizeWhenSampled + habitat * layDateFirst + habitat * DistanceToEdge + (1|site/nest) + (1|SequencePlate), data = adults.meta.scaled)
+
+summary(ad.chao.lmm)
+```
+
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = ad.chao.lmm, n = 250)
+plot(simulationOutput)
+```
+
+
+
+# Results
+All + adult Shannon diversity results
+```{r shannon-diversity kable, message=FALSE, echo=FALSE}
+# make df of results
+# then call kable(df.results)
+# all.sh.lmm, all.chao.lmm, ad.sh.lmm, ad.chao.lmm
+sum.all.sh.lmm <- summary(all.sh.lmm)[["coefficients"]]
+sum.ad.sh.lmm <- summary(ad.sh.lmm)[["coefficients"]]
+
+#make df of lmer output
+shannon.summary.df <- as_tibble(rbind(sum.all.sh.lmm, sum.ad.sh.lmm), rownames="Dependent/Independent variable") %>% 
+  dplyr::rename("P_estimate"="Pr(>|t|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate))
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+kable(shannon.summary.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) All Shannon",1,15) %>%
+  kableExtra::group_rows("(b) Adult Shannon",16,27)%>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+```
+
+Separate out shannon results
+```{r shannon-diversity all birds kable, message=FALSE, echo=FALSE}
+# make df of results
+# then call kable(df.results)
+# all.sh.lmm, all.chao.lmm, ad.sh.lmm, ad.chao.lmm
+sum.all.sh.lmm <- summary(all.sh.lmm)[["coefficients"]]
+
+#make df of lmer output
+shannon.summary.df <- as_tibble(rbind(sum.all.sh.lmm), rownames="Dependent/Independent variable") %>%
+  dplyr::rename("P_estimate"="Pr(>|t|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate))
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+kable(shannon.summary.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("All Shannon",1,15) %>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+```
+
+```{r}
+sum.ad.sh.lmm <- summary(ad.sh.lmm)[["coefficients"]]
+
+shannon.adult.summary.df <- as_tibble(sum.ad.sh.lmm, rownames="Dependent/Independent variable") %>% 
+  dplyr::rename("P_estimate"="Pr(>|t|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate))
+
+## this is in html, dosnt render in word doc # but can copy-paste
+kable(shannon.adult.summary.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("Adult Shannon",1,12)%>%
+  kableExtra::kable_styling(full_width = F)
+```
+
+Chao diversity results (for SI)
+```{r chao-diversity kable, message=FALSE, echo=FALSE}
+# make df of results
+# then call kable(df.results)
+# all.sh.lmm, all.chao.lmm, ad.sh.lmm, ad.chao.lmm
+sum.all.chao.lmm <- summary(all.chao.lmm)[["coefficients"]]
+sum.ad.chao.lmm <- summary(ad.chao.lmm)[["coefficients"]]
+
+#make df of lmer output
+chao.summary.df <- as_tibble(rbind(sum.all.chao.lmm, sum.ad.chao.lmm), rownames="Dependent/Independent variable") %>% 
+  dplyr::rename("P_estimate"="Pr(>|t|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate))
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+kable(chao.summary.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) All Chao",1,21)%>%
+  kableExtra::group_rows("(b) Adult Chao",22,33) %>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+```
+
+```{r}
+#make df of lmer output
+# this is numbering variables when repeated probably because they are rownames rather than just a column
+bdiv.summary.df <- as_tibble(rbind(all.adonis.bc[1:3,1:5], adult.adonis.bc[1:3,1:5]), rownames="Dependent/Independent variable") %>% 
+  rename("P_estimate"="Pr(>F)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate))
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+kable(bdiv.summary.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) All Bray-Curtis",1,3) %>%
+  kableExtra::group_rows("(b) Adult Bray-Curtis",4,6)%>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("beta-kable_________.png")
+
+```
+
+# Plot paired samples
+Plot of paired nestlings, with lines connecting individuals
+
+```{r}
+phylo.nestlings <- subset_samples(phylo.spring, ageBinned=="1week"|ageBinned=="2week")
+
+nestlings.meta <- meta(phylo.nestlings@sam_data)
+```
+
+```{r Extract paired sample data, echo=FALSE}
+indiv.table <- table(nestlings.meta$bird.ID)
+paired.table <- subset(indiv.table,indiv.table>1)
+paired.IDs <- rownames(paired.table)
+
+#paired.D8.shannon <- metadata[(metadata$bird.ID %in% paired.IDs) && (metadata$ageBinned=="1week"),"shannon"]
+
+# subset df instead
+paired.df <- subset(nestlings.meta, bird.ID %in% paired.IDs & (ageBinned=="1week"|ageBinned=="2week"))
+
+# remove samples >2
+#which(indiv.table>2) #CB60C=3, CB6NA, KB922B=3, KB924B=3, KB61D
+remove.paired <- c("CB60-C-D9.S22", "CB6-16-VZ72614.S28", "KB61D-D12.S15", "KB916C-D9.S81","KB922B-D10.S84", "KB924-B-9-201.S89", "CB6-16-VZ72616.S29","CB6-D16-VZ72615.S57","CB6-D16-VZ72617.S58") 
+#remove.paired <- c()
+paired.df <- subset(paired.df, !BIOM.ID %in% remove.paired)
+```
+
+```{r}
+paired.df$habitat <- relevel(paired.df$habitat, "deciduous")
+paired.df <- paired.df %>% dplyr::rename("Habitat"="habitat")
+
+paired.plot.diversity <- ggplot(paired.df, aes(ageBinned, shannon)) +
+  geom_line(aes(group = bird.ID, color = Habitat)) +
+ # geom_jitter(width = 0.2) +
+  #ggtitle("Shannon diversity, repeat samples")+
+    ylab("Shannon diversity") +
+    xlab("Age") +
+    scale_x_discrete(labels=c("1week"="Day-8", "2week"="Day-15"), expand = c(0.05,0.05)) +
+    theme_pubr(base_size = 15) +
+    theme(axis.title = element_text(face="bold")) 
+
+paired.plot.diversity
+#+
+#  theme_pubr()
+```

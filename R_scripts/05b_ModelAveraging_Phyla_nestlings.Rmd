@@ -1,0 +1,215 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Nestling only phyla level RA analyses to determine which fixed effects to include in repeatability analysis
+
+```{r Housekeeping, echo=FALSE}
+rm(list=ls())
+#set.seed(111)
+```
+
+
+```{r}
+#install.packages("arm")
+
+library(MuMIn)
+library(arm)
+library(microbiome)
+library(dplyr)
+library(stringr)
+library(kableExtra)
+```
+
+```{r Read in data, warning=FALSE, echo=FALSE}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+#str(metadata)
+```
+
+Create and save a melted df of data glommed to phyla level
+```{r}
+# sample_data(phylo.spring) <- metadata.scaled
+#phyla.glom <-  tax_glom(phylo.spring, "Phylum", NArm = TRUE)
+#mot <- psmelt(phyla.glom)
+#saveRDS(mot, "../Data/05_melted.phyla.glom.rds")
+
+```
+
+```{r}
+mot <- readRDS("../Data/05_melted.phyla.glom.rds")
+```
+
+```{r Split df by phyla}
+proteobacteria.df <- mot[mot$Phylum=="Proteobacteria",]
+firmicutes.df <- mot[mot$Phylum=="Firmicutes",]
+```
+
+Subset to nestlings
+```{r}
+proteobacteria.df <- proteobacteria.df[!proteobacteria.df$ageBinned=="adult",]
+firmicutes.df <- firmicutes.df[!firmicutes.df$ageBinned=="adult",]
+```
+
+# Proteobacteria nestlings
+
+Global model
+
+```{r}
+binomial.response <- cbind(proteobacteria.df$Abundance/proteobacteria.df$NumberOfReads)
+
+global.proteo <- glmer(binomial.response ~  ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + layDateFirst*habitat+ broodSizeWhenSampled*habitat + DistanceToEdge*habitat + broodSizeWhenSampled*DistanceToEdge + DistanceToEdge*layDateFirst + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, weights = NumberOfReads, data = proteobacteria.df)#,  glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 100000)))
+
+summary(global.proteo)
+```
+
+Standardize the input variables
+```{r}
+stdz.model <- arm::standardize(global.proteo, standardize.y = FALSE)
+summary(stdz.model)
+```
+
+```{r}
+# change na. action
+options(na.action = "na.fail") # required for dredge to run for some reason
+ 
+model.set.proteo <- dredge(stdz.model)
+ 
+options(na.action = "na.omit") # set back to default
+
+```
+
+```{r}
+top.models <- get.models(model.set.proteo, subset = delta<2)
+#summary(get.models(model.set.proteo, subset = 1)[[1]])
+# 
+# save model for results table downstream
+#proteobacteria.model <- get.models(model.set.proteo, subset = 1)[[1]]
+```
+
+## Proteobacteria Model averaging
+```{r}
+model.avg.proteobacteria <- model.avg(top.models)
+ 
+summary(model.avg.proteobacteria)
+```
+
+# Firmicutes nestling birds
+
+Model fails to converge and nearly unidentifiable
+* still nearly unidentifiable after standardising below
+```{r}
+binomial.response <- cbind(firmicutes.df$Abundance/firmicutes.df$NumberOfReads)
+
+global.firmic <- glmer(binomial.response ~  ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + layDateFirst*habitat+ broodSizeWhenSampled*habitat + DistanceToEdge*habitat + broodSizeWhenSampled*DistanceToEdge + DistanceToEdge*layDateFirst + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, weights = NumberOfReads, data = firmicutes.df)#,  glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 100000)))
+
+summary(global.firmic)
+```
+
+Drop non-significant lay date term to aid convergence
+* now model converges and unidentifiable warning disappears after standardising
+```{r}
+binomial.response <- cbind(firmicutes.df$Abundance/firmicutes.df$NumberOfReads)
+
+global.firmic <- glmer(binomial.response ~  ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + broodSizeWhenSampled*habitat + DistanceToEdge*habitat + broodSizeWhenSampled*DistanceToEdge + DistanceToEdge*layDateFirst + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, weights = NumberOfReads, data = firmicutes.df)#,  glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 100000)))
+
+summary(global.firmic)
+```
+
+Fit less complex global model to aid convergence
+```{r}
+# global.proteo <- glmer(binomial.response ~  ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned * DistanceToEdge + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, weights = NumberOfReads, data = proteobacteria.df) # , REML=FALSE not valid argument
+# 
+# summary(global.proteo)
+```
+
+Standardize the input variables
+```{r}
+stdz.model <- arm::standardize(global.firmic, standardize.y = FALSE)
+summary(stdz.model)
+```
+
+Convergence warning- does it apply to all models or just some
+```{r}
+# change na. action
+options(na.action = "na.fail") # required for dredge to run for some reason
+# 
+model.set.firmic <- dredge(stdz.model)
+# 
+options(na.action = "na.omit") # set back to default
+
+```
+
+
+Only one model in top model set
+```{r}
+top.models <- get.models(model.set.firmic, subset = delta<2)
+summary(get.models(model.set.firmic, subset = 1)[[1]])
+# 
+# # save model for results table downstream
+# proteobacteria.model <- get.models(model.set.proteo, subset = 1)[[1]]
+```
+
+## Firmicutes Model averaging
+
+Only one model in top model set so averaging unneccessary
+```{r}
+# model.avg.firmicutes <- model.avg(top.models)
+# # 
+# summary(model.avg.firmicutes)
+```
+
+# Results
+## Pro results
+Model average
+```{r}
+proteobacteria.nestlg <- summary(model.avg.proteobacteria)$coefmat.subset # returns summary table for conditional average
+```
+
+```{r}
+#make df of lmer output
+proteobacteria.modelAvg.df <- as_tibble(rbind(proteobacteria.nestlg), rownames="Independent variables") %>%
+  dplyr::rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+  mutate(P_estimate=ifelse(P_estimate>=0.05 & P_estimate<=0.06,str_c(P_estimate,"  ."),P_estimate))
+
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+proteobacteria.results <- kable(proteobacteria.modelAvg.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) proteobacteria",1,nrow(proteobacteria.modelAvg.df)) %>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+proteobacteria.results
+```
+
+## Firm results
+Single model
+
+```{r}
+firmicutes.nestlg <- summary(get.models(model.set.firmic, subset = 1)[[1]])[["coefficients"]]
+```
+
+```{r}
+#make df of lmer output
+firmicutes.modelAvg.df <- as_tibble((firmicutes.nestlg), rownames="Independent variables") %>%
+  dplyr::rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+  mutate(P_estimate=ifelse(P_estimate>=0.05 & P_estimate<=0.06,str_c(P_estimate,"  ."),P_estimate))
+
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+firmicutes.results <- kable(firmicutes.modelAvg.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) firmicutes",1,nrow(firmicutes.modelAvg.df)) %>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+firmicutes.results
+```

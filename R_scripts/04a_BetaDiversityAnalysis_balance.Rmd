@@ -1,0 +1,103 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Check whether unbalanced dataset is changing beta diversity results
+
+```{r}
+table(metadata$ageBinned, metadata$habitat)
+```
+
+Create resampled dataframe with equal habitat variable
+```{r}
+
+result <-setNames(data.frame(matrix(ncol = ncol(metadata), nrow = 0)), colnames(metadata))
+
+colnames(result) <- colnames(metadata)
+for (i in c("1week", "2week", "adult")) {
+
+
+assign(paste0("result", ".", i), metadata[metadata$ageBinned == i ,] %>% 
+  group_by(habitat) %>%
+  sample_n(., size = min(table(.$habitat))) #8
+)
+}
+
+result <- rbind(result.1week, result.2week, result.adult)
+table(result$ageBinned, result$habitat)
+```
+
+Subset dataset to just these
+```{r}
+phylo.even <- subset_samples(phylo.spring, BIOM.ID %in% result$BIOM.ID)
+```
+
+```{r}
+numeric.predictors <- c("QubitDNA","Tarsus","Weight", "wing", "broodSizeWhenSampled", "broodSizeMax", "totalFledge", "clutchSize", "layDateFirst", "numberDeadPreRinged", "numberDeadPostRinged","scaled.mass","scaled.mass.wing.adult", "scaled.mass.tarsus.adult","scaled.mass.chick", "scaled.mass.tarsus", "scaled.mass.wing", "DistanceToEdge")
+
+# centre and scale numeric variables ie. subtract mean and divide by st. deviation
+result.scaled <- result
+result.scaled[,numeric.predictors] <- scale(result.scaled[,numeric.predictors])
+```
+
+# analysis
+
+```{r}
+# Filter rare taxa
+phylo.knowles <- filter_taxa(phylo.even, function(x) sum(x > 1) > (0.05*length(x)), TRUE)
+```
+
+```{r}
+# phylo.knowles.clr <- phylo.knowles
+# phylo.knowles.clr@otu_table <- otu_table(clr(phylo.knowles@otu_table), taxa_are_rows = F)
+# aitchison.dist.dups <- phyloseq::distance(phylo.knowles.clr, method = "euclidean")
+pk.otu.clr.dups <- clr(phylo.knowles@otu_table)
+aitchison.dist.dups <- vegdist(pk.otu.clr.dups, method = "euclid")
+```
+
+All variables except for habitat have heterogenous dispersions
+```{r, }
+## H0= No difference in dispersion between groups
+# calc dispersion, using distance measure
+# 
+# variables <- c("ageBinned", "habitat", "layDateFirst", "broodSizeWhenSampled", "DistanceToEdge", "SequencePlate")
+# 
+# i <- "ageBinned"
+# 
+# for(i in variables){ # works
+#  dispersion <- betadisper(aitchison.dist.dups, result.scaled$i)
+#  print(i) # print variable being tested
+#  print(permutest(dispersion, pairwise=FALSE, permutations=1000))
+#  cat("\n") # print line break, makes it easier to read
+# }
+
+dispersion <- betadisper(aitchison.dist.dups, result.scaled$ageBinned)
+permutest(dispersion, pairwise=FALSE, permutations=1000)
+
+dispersion <- betadisper(aitchison.dist.dups, result.scaled$habitat)
+permutest(dispersion, pairwise=FALSE, permutations=1000)
+
+dispersion <- betadisper(aitchison.dist.dups, result.scaled$layDateFirst)
+permutest(dispersion, pairwise=FALSE, permutations=1000)
+
+dispersion <- betadisper(aitchison.dist.dups, result.scaled$broodSizeWhenSampled)
+permutest(dispersion, pairwise=FALSE, permutations=1000)
+
+dispersion <- betadisper(aitchison.dist.dups, result.scaled$DistanceToEdge)
+permutest(dispersion, pairwise=FALSE, permutations=1000)
+
+dispersion <- betadisper(aitchison.dist.dups, result.scaled$SequencePlate)
+permutest(dispersion, pairwise=FALSE, permutations=1000)
+
+```
+
+Age is always significant even when dataset subsampled to 8 per age-habitat class OR to equal habitat classes
+age * habitat interaction also significant in both cases of subsampling
+```{r}
+perms.dups <- with(result, how(nperm = 1000, blocks = nest))
+
+all.adonis.dups.fixed <- adonis2(aitchison.dist.dups ~ ageBinned * habitat + layDateFirst + broodSizeWhenSampled + DistanceToEdge + SequencePlate, by="margin", method="euclidian", data = result.scaled, permutations = perms.dups)
+
+all.adonis.dups.fixed
+```

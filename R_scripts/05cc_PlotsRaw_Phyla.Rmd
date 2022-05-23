@@ -1,0 +1,407 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Robustness checks for all birds phyla models
+
+JQ meeting 29 April 2022
+* plot raw data to check effects
+* arcsine square root transofmr + gaussian model as alt to binomial
+* can report original model in paper but mention potential over dispersion and that certain results are less robust and certain results more robust
+
+# set up
+```{r Housekeeping, echo=FALSE}
+rm(list=ls())
+#set.seed(111)
+```
+
+
+```{r}
+#install.packages("arm")
+
+library(MuMIn)
+library(arm)
+library(microbiome)
+library(dplyr)
+library(stringr)
+library(kableExtra)
+```
+
+```{r Read in data, warning=FALSE, echo=FALSE}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+#str(metadata)
+```
+
+```{r}
+mot <- readRDS("../Data/05_melted.phyla.glom.rds")
+```
+
+```{r Split df by phyla}
+proteobacteria.df <- mot[mot$Phylum=="Proteobacteria",]
+firmicutes.df <- mot[mot$Phylum=="Firmicutes",]
+
+```
+
+# Proteobacteria
+
+```{r}
+proteo.Proportion <- c(proteobacteria.df$Abundance/proteobacteria.df$NumberOfReads)
+
+proteobacteria.df <- cbind(proteobacteria.df, proteo.Proportion)
+
+rm(list = "proteo.Proportion")
+```
+
+check effects
+* Age
+* brood size
+* distance to edge
+* age x habitat
+* age x brood size
+* age x distance
+* age x lay date
+
+```{r}
+ggplot(proteobacteria.df, aes(ageBinned, proteo.Proportion)) +
+  geom_boxplot()
+```
+
+```{r}
+ggplot(proteobacteria.df, aes(broodSizeWhenSampled ,proteo.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+ggplot(subset(proteobacteria.df, broodSizeWhenSampled>1 & broodSizeWhenSampled<7), aes(broodSizeWhenSampled, proteo.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+```{r}
+ggplot(proteobacteria.df, aes(DistanceToEdge ,proteo.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+ggplot(subset(proteobacteria.df, DistanceToEdge<50), aes(DistanceToEdge, proteo.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+```{r}
+ggplot(proteobacteria.df, aes(ageBinned, proteo.Proportion, fill = habitat)) +
+  geom_boxplot()
+```
+
+```{r}
+ggplot(proteobacteria.df, aes(as.factor(broodSizeWhenSampled), proteo.Proportion, fill = ageBinned)) +
+  geom_boxplot() 
+```
+
+```{r}
+ggplot((proteobacteria.df), aes(DistanceToEdge, proteo.Proportion, fill = ageBinned)) +
+#  geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+# drop large distance values
+ggplot(subset(proteobacteria.df, DistanceToEdge<50), aes(DistanceToEdge, proteo.Proportion, fill = ageBinned)) +
+#  geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+```{r}
+ggplot(proteobacteria.df, aes(layDateFirst, proteo.Proportion, fill = ageBinned, label = nest)) +
+  geom_smooth(method="lm") +
+  geom_point() +
+  geom_label()
+
+# drop large layDateFirst values
+ggplot(subset(proteobacteria.df, layDateFirst<80), aes(layDateFirst, proteo.Proportion, fill = ageBinned)) +
+#  geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+* Age
+* brood size
+* distance to edge
+* age x habitat
+* age x brood size
+* age x distance
+* age x lay date
+
+# Firmicutes
+
+```{r}
+firm.Proportion <- c(firmicutes.df$Abundance/firmicutes.df$NumberOfReads)
+
+firmicutes.df <- cbind(firmicutes.df, firm.Proportion)
+
+rm(list = "firm.Proportion")
+```
+
+check effects
+* Age
+* brood size
+* distance to edge
+* age x habitat
+* age x brood size
+* age x distance
+* age x lay date
+
+```{r}
+ggplot(firmicutes.df, aes(ageBinned, firm.Proportion)) +
+  geom_boxplot()
+```
+
+```{r}
+ggplot(firmicutes.df, aes(broodSizeWhenSampled ,firm.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+ggplot(subset(firmicutes.df, broodSizeWhenSampled>1 & broodSizeWhenSampled<7), aes(broodSizeWhenSampled, firm.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+```{r}
+ggplot(firmicutes.df, aes(DistanceToEdge ,firm.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+ggplot(subset(firmicutes.df, DistanceToEdge<50), aes(DistanceToEdge, firm.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+```{r}
+ggplot(firmicutes.df, aes(ageBinned, firm.Proportion, fill = habitat)) +
+  geom_boxplot()
+```
+
+```{r}
+ggplot(firmicutes.df, aes(as.factor(broodSizeWhenSampled), firm.Proportion, fill = ageBinned)) +
+  geom_boxplot() 
+```
+
+```{r}
+ggplot((firmicutes.df), aes(DistanceToEdge, firm.Proportion, fill = ageBinned)) +
+#  geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+# drop large distance values
+ggplot(subset(firmicutes.df, DistanceToEdge<50), aes(DistanceToEdge, firm.Proportion, fill = ageBinned)) +
+#  geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+```{r}
+ggplot(firmicutes.df, aes(layDateFirst, firm.Proportion, fill = ageBinned)) +
+  geom_smooth(method="lm") +
+  geom_point(aes(color = ageBinned))
+
+# drop large layDateFirst values
+ggplot(subset(firmicutes.df, layDateFirst<80), aes(layDateFirst, firm.Proportion, fill = ageBinned)) +
+#  geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point(aes(color = ageBinned))
+```
+
+# Proteobacteria: adults
+* lay date
+* age
+* sex
+* brood size
+* sex * brood size
+* sex * distance
+* sex * lay date
+
+```{r}
+proteobacteria.adult.df <- mot[(mot$Phylum=="Proteobacteria" & mot$ageBinned=="adult"),]
+firmicutes.adult.df <- mot[(mot$Phylum=="Firmicutes" & mot$ageBinned=="adult"),]
+```
+
+```{r}
+proteo.Proportion <- c(proteobacteria.adult.df$Abundance/proteobacteria.adult.df$NumberOfReads)
+
+proteobacteria.adult.df <- cbind(proteobacteria.adult.df, proteo.Proportion)
+
+rm(list = "proteo.Proportion")
+```
+
+```{r}
+ggplot(proteobacteria.adult.df, aes(ageDays, proteo.Proportion)) +
+  geom_boxplot()
+```
+
+```{r}
+ggplot(proteobacteria.adult.df, aes(broodSizeWhenSampled, proteo.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+ggplot(subset(proteobacteria.adult.df, broodSizeWhenSampled>1 & broodSizeWhenSampled<7), aes(broodSizeWhenSampled, proteo.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+```{r}
+ggplot(proteobacteria.adult.df, aes(layDateFirst, proteo.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+ggplot(subset(proteobacteria.adult.df, layDateFirst<80), aes(layDateFirst, proteo.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+```{r}
+ggplot(proteobacteria.adult.df, aes(habitat, proteo.Proportion)) +
+  geom_boxplot()
+  
+ggplot(proteobacteria.adult.df, aes(habitat, proteo.Proportion, fill = Sex)) +
+  geom_boxplot()
+```
+
+```{r}
+ggplot(proteobacteria.adult.df, aes(Sex, proteo.Proportion)) +
+  geom_boxplot()
+  
+ggplot(proteobacteria.adult.df, aes(Sex, proteo.Proportion, fill = habitat)) +
+  geom_boxplot()
+```
+
+```{r}
+ggplot(proteobacteria.adult.df, aes(broodSizeWhenSampled, proteo.Proportion, fill = Sex)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+ggplot(subset(proteobacteria.adult.df, broodSizeWhenSampled>2 & broodSizeWhenSampled<7), aes(broodSizeWhenSampled, proteo.Proportion, fill = Sex)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+```{r}
+ggplot(proteobacteria.adult.df, aes(DistanceToEdge, proteo.Proportion, fill = Sex)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+ggplot(subset(proteobacteria.adult.df, DistanceToEdge<60), aes(DistanceToEdge, proteo.Proportion, fill=Sex)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+```{r}
+ggplot(proteobacteria.adult.df, aes(layDateFirst, proteo.Proportion, fill = Sex)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+ggplot(subset(proteobacteria.adult.df, layDateFirst<80), aes(layDateFirst, proteo.Proportion, fill =  Sex)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+# Firmicutes: adults
+
+```{r}
+firm.Proportion <- c(firmicutes.adult.df$Abundance/firmicutes.adult.df$NumberOfReads)
+
+firmicutes.adult.df <- cbind(firmicutes.adult.df, firm.Proportion)
+
+rm(list = "firm.Proportion")
+```
+
+```{r}
+ggplot(firmicutes.adult.df, aes(ageDays, firm.Proportion)) +
+  geom_boxplot()
+```
+
+```{r}
+ggplot(firmicutes.adult.df, aes(broodSizeWhenSampled, firm.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+ggplot(subset(firmicutes.adult.df, broodSizeWhenSampled>1 & broodSizeWhenSampled<7), aes(broodSizeWhenSampled, firm.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+```{r}
+ggplot(firmicutes.adult.df, aes(layDateFirst, firm.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+ggplot(subset(firmicutes.adult.df, layDateFirst>60 & layDateFirst<80), aes(layDateFirst, firm.Proportion)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+```{r}
+ggplot(firmicutes.adult.df, aes(Sex, firm.Proportion)) +
+  geom_boxplot()
+  
+ggplot(firmicutes.adult.df, aes(Sex, firm.Proportion, fill = habitat)) +
+  geom_boxplot()
+```
+
+```{r}
+ggplot(firmicutes.adult.df, aes(broodSizeWhenSampled, firm.Proportion, fill = Sex)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+ggplot(subset(firmicutes.adult.df, broodSizeWhenSampled>1 & broodSizeWhenSampled<7), aes(broodSizeWhenSampled, firm.Proportion, fill = Sex)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+
+```{r}
+ggplot(firmicutes.adult.df, aes(DistanceToEdge, firm.Proportion, fill = Sex)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+ggplot(subset(firmicutes.adult.df, DistanceToEdge<60),
+       aes(DistanceToEdge, firm.Proportion, fill = Sex)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point(aes(fill = Sex))
+```
+
+```{r}
+ggplot(firmicutes.adult.df, aes(layDateFirst, firm.Proportion, fill = Sex)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+
+ggplot(subset(firmicutes.adult.df, layDateFirst>60 & layDateFirst<80), aes(layDateFirst, firm.Proportion, fill =  Sex)) +
+ # geom_smooth() +
+  geom_smooth(method="lm") +
+  geom_point()
+```

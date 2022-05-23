@@ -1,0 +1,353 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+Model averaging for alpha diversity models according to Grueber, Nakagawa paper
+
+```{r Housekeeping, echo=FALSE}
+rm(list=ls())
+#set.seed(111)
+```
+
+
+```{r}
+#install.packages("arm")
+
+library(MuMIn)
+library(arm)
+library(microbiome)
+library(tidyverse)
+library(kableExtra)
+library(phyloseq)
+```
+
+```{r Read in data, warning=FALSE, echo=FALSE}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+
+# relevel habitat
+#metadata$habitat <- relevel(metadata$habitat, "deciduous") # no difference in results if habitat releveled other than coefficient signs change (direction of effect)
+```
+
+```{r}
+# # subset to adults
+phylo.adults <- subset_samples(phylo.spring, ageBinned=="adult")
+adults.metadata <- meta(phylo.adults@sam_data)
+
+# relevel habitat
+#adults.metadata$Sex <- relevel(adults.metadata$Sex, "M") # no difference in results if habitat or sex releveled
+```
+
+# all birds shannon
+
+```{r}
+my.backward.diff = matrix(c(-2/3, 1/3, 1/3, -1/3, -1/3, 2/3), ncol = 2)
+my.backward.diff
+```
+
+Adding this contrast makes no difference to AIC
+```{r}
+levels(metadata$ageBinned) # verify: 1week,2week,adult
+#assigning the backward difference coding to ageBinned
+contrasts(metadata$ageBinned) = my.backward.diff
+```
+
+Note: Must fit with REML and i am using non-scaled dataset.
+* fit global model with REML
+```{r}
+#metadata.scaled$habitat <- relevel(metadata.scaled$habitat, "conifer")
+
+all.sh.lmm <- lmer(log(shannon) ~ ageBinned * habitat * layDateFirst + ageBinned * broodSizeWhenSampled + DistanceToEdge*habitat + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata, REML = TRUE)
+summary(all.sh.lmm)
+```
+
+
+Standardize the input variables
+* http://www.stat.columbia.edu/~gelman/research/published/standardizing7.pdf
+* "For comparing coefficients for different predictors within a model, standardizing gets the nod. (Although I don’t standardize binary inputs. I code them as 0/1, and then I standardize all other numeric inputs by dividing by two standard deviation, thus putting them on approximately the same scale as 0/1 variables.)"
+```{r}
+stdz.model <- standardize(all.sh.lmm, standardize.y = FALSE)#, unchanged = "habitat")#, binary.inputs = "full")#
+summary(stdz.model)
+```
+
+Generate model set
+
+Forcing inclusion of age*habitat interaction.
+Using AICc over AIC didnt change significance at all.
+dredge using ML (i.e. REML=FALSE)
+```{r}
+# change na. action
+options(na.action = "na.fail") # required for dredge to run for some reason
+
+getAllTerms(stdz.model) 
+
+model.set <- dredge(stdz.model, fixed= ~ ageBinned + c.habitat + ageBinned:c.habitat, rank="AICc", REML = FALSE)
+
+options(na.action = "na.omit") # set back to default
+
+```
+
+Extract top models and refit using REML
+```{r}
+top.models <- get.models(model.set, subset = delta<4, REML = TRUE)
+```
+
+## Model averaging: shannon all birds
+
+"Note there are two sets of estimates: the “full” coefficients set terms to 0 if they are not included in the model while averaging, whereas the “conditional” coefficients ignores the predictors entirely. The “full” coefficients are thus more conservative and it is best practice to interpret these. "-uoftcoders
+```{r}
+model.avg1 <- model.avg(top.models)
+
+summary(model.avg1)
+```
+
+
+
+# All birds chao1
+```{r}
+#metadata.scaled$habitat <- relevel(metadata.scaled$habitat, "conifer")
+
+chao.global <- lmer(log(chao1) ~ ageBinned * habitat * layDateFirst + ageBinned * broodSizeWhenSampled + habitat*DistanceToEdge + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata, REML = TRUE)
+summary(chao.global)
+```
+
+Standardize the input variables
+
+```{r}
+stdz.model <- standardize(chao.global, standardize.y = FALSE)
+summary(stdz.model)
+```
+
+```{r}
+# change na. action
+options(na.action = "na.fail") # required for dredge to run for some reason
+
+getAllTerms(stdz.model) 
+
+model.set <- dredge(stdz.model, fixed= ~ ageBinned + c.habitat + ageBinned:c.habitat, rank="AICc", REML = FALSE)
+
+options(na.action = "na.omit") # set back to default
+
+```
+
+```{r}
+top.models2 <- get.models(model.set, subset = delta<4, REML = TRUE)
+```
+
+## Model averaging: chao1 all birds
+
+"Note there are two sets of estimates: the “full” coefficients set terms to 0 if they are not included in the model while averaging, whereas the “conditional” coefficients ignores the predictors entirely. The “full” coefficients are thus more conservative and it is best practice to interpret these. "-uoftcoders
+```{r}
+model.avg2 <- model.avg(top.models2)
+
+summary(model.avg2)
+```
+
+# Adult birds shannon
+
+```{r}
+adult.shannon.global <- lmer((shannon)^(1/3) ~ Sex * habitat * broodSizeWhenSampled + Sex * habitat * layDateFirst + habitat * DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.metadata, REML = TRUE)
+summary(adult.shannon.global)
+```
+
+Standardize the input variables
+
+```{r}
+stdz.model <- standardize(adult.shannon.global, standardize.y = FALSE)
+summary(stdz.model)
+```
+
+
+```{r}
+# change na. action
+options(na.action = "na.fail") # required for dredge to run for some reason
+
+getAllTerms(stdz.model) 
+
+model.set.3 <- dredge(stdz.model, rank="AICc", REML = FALSE)
+
+options(na.action = "na.omit") # set back to default
+
+```
+
+```{r}
+top.models.3 <- get.models(model.set.3, subset = delta<4, REML = TRUE)
+```
+
+## Model averaging: shannon adult birds
+
+```{r}
+model.avg3 <- model.avg(top.models.3)
+
+summary(model.avg3)
+```
+
+# Adult birds chao1
+
+Removed site random effect as was causing singular warning
+```{r}
+#adults.meta.scaled$habitat <- relevel(adults.meta.scaled$habitat, "deciduous")
+# adults.meta.scaled$Sex <- relevel(adults.meta.scaled$Sex, "Fe")
+
+adult.chao.global <- lmer(log(chao1) ~ Sex * habitat * broodSizeWhenSampled + Sex * habitat * layDateFirst + habitat * DistanceToEdge + (1|nest) + (1|SequencePlate), data = adults.metadata, REML = TRUE)
+
+summary(adult.chao.global)
+```
+
+Standardize the input variables
+
+```{r}
+stdz.model <- standardize(adult.chao.global, standardize.y = FALSE)
+summary(stdz.model)
+```
+
+
+```{r}
+# change na. action
+options(na.action = "na.fail") # required for dredge to run for some reason
+
+getAllTerms(stdz.model) 
+
+model.set.4 <- dredge(stdz.model, rank="AICc" , REML= FALSE)
+
+options(na.action = "na.omit") # set back to default
+
+```
+
+```{r}
+top.models.4 <- get.models(model.set.4, subset = delta<4, REML = TRUE)
+```
+
+## Model averaging: chao1 adult birds
+
+```{r}
+model.avg4 <- model.avg(top.models.4)
+
+summary(model.avg4)
+```
+
+# results
+
+Extract results from averaged object
+* note no rounding up
+```{r}
+shannon.all <- summary(model.avg2)[["coefficients"]]
+
+summary(model.avg2)[["msTable"]] # returns component model table
+
+coefTable(model.avg2) # returns estimate + SE
+
+summary(model.avg2)$coefmat.full # returns summary table for full average
+
+summary(model.avg2)$coefmat.subset # returns summary table for conditional average
+```
+
+## Shannon all birds results
+
+```{r}
+shannon.all.full <- summary(model.avg1)$coefmat.full # returns summary table for full average
+
+shannon.all.conditional <- summary(model.avg1)$coefmat.subset # returns summary table for conditional average
+```
+
+```{r shannon-diversity kable}
+#make df of lmer output
+shannon.modelAvg.df <- as_tibble(rbind(shannon.all.full, shannon.all.conditional), rownames="Independent variables") %>%
+  dplyr::rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+  mutate(P_estimate=ifelse(P_estimate>=0.05 & P_estimate<=0.06,str_c(P_estimate,"  ."),P_estimate))
+
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+tib <- kable(shannon.modelAvg.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) Full average",1,nrow(shannon.modelAvg.df)/2) %>%
+  kableExtra::group_rows("(b) Conditional average",(nrow(shannon.modelAvg.df)/2)+1,nrow(shannon.modelAvg.df))%>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+```
+
+## Chao all birds results
+
+```{r}
+chao.all.full <- summary(model.avg2)$coefmat.full # returns summary table for full average
+
+chao.all.conditional <- summary(model.avg2)$coefmat.subset # returns summary table for conditional average
+```
+
+```{r chao-diversity kable}
+#make df of lmer output
+chao.modelAvg.df <- as_tibble(rbind(chao.all.full, chao.all.conditional), rownames="Independent variables") %>%
+  dplyr::rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+  mutate(P_estimate=ifelse(P_estimate>=0.05 & P_estimate<=0.06,str_c(P_estimate,"  ."),P_estimate))
+
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+tib2 <- kable(chao.modelAvg.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) Full average",1,nrow(chao.modelAvg.df)/2) %>%
+  kableExtra::group_rows("(b) Conditional average",(nrow(chao.modelAvg.df)/2)+1,nrow(chao.modelAvg.df))%>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+```
+
+## Shannon adult birds results
+```{r}
+shannon.adult.full <- summary(model.avg3)$coefmat.full # returns summary table for full average
+
+shannon.adult.conditional <- summary(model.avg3)$coefmat.subset # returns summary table for conditional average
+```
+
+```{r}
+#make df of lmer output
+shannon.adult.modelAvg.df <- as_tibble(rbind(shannon.adult.full, shannon.adult.conditional), rownames="Independent variables") %>%
+  dplyr::rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+  mutate(P_estimate=ifelse(P_estimate>=0.05 & P_estimate<=0.06,str_c(P_estimate,"  ."),P_estimate))
+
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+tib3 <- kable(shannon.adult.modelAvg.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) Full average",1,nrow(shannon.adult.modelAvg.df)/2) %>%
+  kableExtra::group_rows("(b) Conditional average",(nrow(shannon.adult.modelAvg.df)/2)+1,nrow(shannon.adult.modelAvg.df))%>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+```
+
+## Chao1 adult birds results
+```{r}
+chao.adult.full <- summary(model.avg4)$coefmat.full # returns summary table for full average
+
+chao.adult.conditional <- summary(model.avg4)$coefmat.subset # returns summary table for conditional average
+```
+
+```{r}
+#make df of lmer output
+chao.adult.modelAvg.df <- as_tibble(rbind(chao.adult.full, chao.adult.conditional), rownames="Independent variables") %>%
+  dplyr::rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+  mutate(P_estimate=ifelse(P_estimate>=0.05 & P_estimate<=0.06,str_c(P_estimate,"  ."),P_estimate))
+
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+tib4 <- kable(chao.adult.modelAvg.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) Full average",1,nrow(chao.adult.modelAvg.df)/2) %>%
+  kableExtra::group_rows("(b) Conditional average",(nrow(chao.adult.modelAvg.df)/2)+1,nrow(chao.adult.modelAvg.df))%>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+```

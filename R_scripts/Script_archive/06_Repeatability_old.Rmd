@@ -1,0 +1,195 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Archiving this script following meeting with JQ and Gabrielle who advised on changing Repeatability analysis, 14/1/22
+
+Calculate repeatability
+* see GD email form July 2019
+
+See
+* https://www.sciencedirect.com/science/article/pii/S0003347221000786 linked by Camille
+* https://tomhouslay.files.wordpress.com/2017/02/indivvar_mv_tutorial_asreml.pdf linked by gabrielle
+
+# Modelling: Repeatability
+
+Can i calculate for individual and for nest?
+
+*Copied from old script (in GTM_phd dir) on 3 Sept 2021, must update*
+
+Calculating repeatability of alpha diversity for paired samples. See GD email for methods or Paired_Repeatability.R script. Camille said two ways to start, w/ fixed effects is adjusted repeatability and w/o fixed effect is just repeatability?
+* Repeatability = 0.4835202, repeatability.lower = 0.3962685, repeatability.upper = 0.5133735
+* Camille says i can get a p-value by performing an anova on the lm and an lm w/o the random effect HOWEVER i cant perform a lmer() w/o specifying a random effect and i cant perform anova on a lmer and a lm it seems.
+```{r}
+lm.null <- lmer(shannon ~  ageBinned, data = paired.df)
+lm <- lmer(shannon ~ ageBinned + (1|bird.ID), data = paired.df)
+anova(lm.null, lm)
+###########
+# calculate repeatabilty estimate
+VarCorr(lm)
+
+# repeatability = Std.Dev of intercept / (Std.Dev of intercept + Std.Dev. of Residual)
+# repeatability = w/i individual variation / w/i individual + between individual variation
+repeatability <- 0.95825/(0.95825+1.02357)
+
+##########
+# calculate confidence intervals w/ 2 possible methods
+
+# Method 1: bootstrapping approach
+#confint function calculates 95% confidence interval around model estimates
+confint(lm,method="boot",oldNames=FALSE,nsim=1000)
+#sd_(Intercept)|indiv = stdev of intercept for 95%CI
+#sigma = stdev model residual error
+
+repeatability.lower <- 0.5054279/(0.5054279 + 0.7700403) # 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+repeatability.upper <- 1.3380642/(1.3380642 + 1.2683504) # 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+
+```
+
+# Repeatability: nest
+Should i remove birds measured twice?
+Including fixed effect calculates adjusted repeatability
+
+Remove individuals measured twice
+* setting seed so same individuals removed. Note: set.seed addded after current repeatability measures were calculated.
+```{r}
+# n_occur <- data.frame(table(metadata$bird.ID))
+# n_occur[n_occur$Freq > 1,]
+# vocabulary[vocabulary$id %in% n_occur$Var1[n_occur$Freq > 1],]
+
+library(dplyr)
+set.seed(1189)
+metadata.NoDups <- metadata %>% 
+   group_by(bird.ID) %>%
+   sample_n(1)
+```
+
+Note: in lm w/ repeat measures and raw (untransformed shannon): "Repeatability= 0.405 Lower repeatability= 0.346 | Upper repeatability= 0.445"
+Should i transform response towards normality?
+*"Repeatability of nest adjusted for age = 0.402 Lower repeatability= 0.331 | Upper repeatability= 0.442"*
+```{r}
+#lm.null <- lmer(shannon ~  ageBinned, data = metadata)
+#lm <- lmer(shannon ~ ageBinned + (1|nest), data = metadata)
+#anova(lm.null, lm)
+###########
+# calculate repeatabilty estimate
+lm <- lmer(log(shannon) ~ ageBinned + (1|nest), data = metadata.NoDups)
+VarCorr(lm)
+
+# repeatability = Std.Dev of intercept / (Std.Dev of intercept + Std.Dev. of Residual)
+# repeatability = w/i individual variation / w/i individual + between individual variation
+repeatability <- 0.35373 /(0.35373 +0.52706)
+
+##########
+# calculate confidence intervals w/ 2 possible methods
+
+# Method 1: bootstrapping approach
+#confint function calculates 95% confidence interval around model estimates
+confint(lm,method="boot",oldNames=FALSE,nsim=1000)
+#sd_(Intercept)|indiv = stdev of intercept for 95%CI
+#sigma = stdev model residual error
+
+repeatability.lower <- 0.2290297/(0.2290297 + 0.4638168) # 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+repeatability.upper <- 0.46708757/(0.46708757 + 0.58938265) # 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+
+paste("Repeatability=", round(repeatability, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+```
+
+## Chao1 nest repeatability
+[1] "Repeatability= 0.435 Lower repeatability= 0.377 | Upper repeatability= 0.473"
+```{r}
+#lm.null <- lmer(shannon ~  ageBinned, data = metadata)
+#lm <- lmer(shannon ~ ageBinned + (1|nest), data = metadata)
+#anova(lm.null, lm)
+###########
+# calculate repeatabilty estimate
+lm <- lmer(log(chao1) ~ ageBinned + (1|nest), data = metadata.NoDups)
+VarCorr(lm)
+
+# repeatability = Std.Dev of intercept / (Std.Dev of intercept + Std.Dev. of Residual)
+# repeatability = w/i individual variation / w/i individual + between individual variation
+repeatability <- 0.67888 /(0.67888 +0.88159)
+
+##########
+# calculate confidence intervals w/ 2 possible methods
+
+# Method 1: bootstrapping approach
+#confint function calculates 95% confidence interval around model estimates
+confint(lm,method="boot",oldNames=FALSE,nsim=1000)
+#sd_(Intercept)|indiv = stdev of intercept for 95%CI
+#sigma = stdev model residual error
+
+repeatability.lower <- 0.4685901/(0.4685901 + 0.7731787) # 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+repeatability.upper <- 0.8891294/(0.8891294 + 0.9909475) # 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+
+paste("Repeatability=", round(repeatability, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+```
+
+# Repeatability: individuals
+
+Only include individuals measured >1
+```{r}
+n_occur <- data.frame(table(metadata$bird.ID))
+dups <- n_occur[n_occur$Freq > 1,]$Var1
+
+#vocabulary[vocabulary$id %in% n_occur$Var1[n_occur$Freq > 1],]
+
+library(dplyr)
+metadata.Dups <- metadata[metadata$bird.ID %in% dups,]
+```
+
+## Shannon repeatability
+
+[1] "Repeatability= 0.39 Lower repeatability= 0.0948126564543683 | Upper repeatability= 0.434"
+confint() gives quite different values everytime.
+```{r}
+# calculate repeatabilty estimate
+lm <- lmer(log(shannon) ~ 1 + (1|bird.ID), data = metadata.Dups)
+VarCorr(lm)
+
+# repeatability = Std.Dev of intercept / (Std.Dev of intercept + Std.Dev. of Residual)
+# repeatability = w/i individual variation / w/i individual + between individual variation
+repeatability <- 0.38741 /(0.38741 +0.60548)
+
+##########
+# calculate confidence intervals w/ 2 possible methods
+
+# Method 1: bootstrapping approach
+#confint function calculates 95% confidence interval around model estimates
+confint(lm,method="boot",oldNames=FALSE,nsim=1000)
+#sd_(Intercept)|indiv = stdev of intercept for 95%CI
+#sigma = stdev model residual error
+
+repeatability.lower <- 0.05159631/(0.05159631 + 0.49259591) # 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+repeatability.upper <- 0.5544087/(0.5544087 + 0.7237782) # 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+
+paste("Repeatability=", round(repeatability, 3),"Lower repeatability=",(repeatability.lower ),"| Upper repeatability=", round(repeatability.upper, 3))
+```
+
+## Chao1 repeatability
+
+"Repeatability= 0.402 Lower repeatability= 0.349 | Upper repeatability= 0.477"
+```{r}
+# calculate repeatabilty estimate
+lm <- lmer(log(chao1) ~ 1 + (1|bird.ID), data = metadata.Dups)
+VarCorr(lm)
+
+# repeatability = Std.Dev of intercept / (Std.Dev of intercept + Std.Dev. of Residual)
+# repeatability = w/i individual variation / w/i individual + between individual variation
+repeatability <- 0.75421 /(0.75421 +0.93870)
+
+##########
+# calculate confidence intervals w/ 2 possible methods
+
+# Method 1: bootstrapping approach
+#confint function calculates 95% confidence interval around model estimates
+confint(lm,method="boot",oldNames=FALSE,nsim=1000)
+#sd_(Intercept)|indiv = stdev of intercept for 95%CI
+#sigma = stdev model residual error
+
+repeatability.lower <- 0.3959366/(0.3959366 + 0.7383626) # 2.5% sd_(intercept) / (2.5% sd_(intercept) + 2.5% sigma)
+repeatability.upper <- 1.026846/(1.026846 + 1.127218) # 97.5% sd_(intercept) / (97.5% sd_(intercept) + 97.5% sigma)
+
+paste("Repeatability=", round(repeatability, 3),"Lower repeatability=",round(repeatability.lower, 3),"| Upper repeatability=", round(repeatability.upper, 3))
+```

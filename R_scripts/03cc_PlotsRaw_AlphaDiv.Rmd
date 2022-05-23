@@ -1,0 +1,65 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Plot raw data for alpha diversity results to verify robust
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+library(tidyverse)
+library(microbiome)
+```
+
+```{r}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+```
+
+# Plots
+* age
+* distance
+* age x habitat
+
+## Age
+
+```{r}
+ggplot(metadata, aes(ageBinned, shannon)) +
+  geom_boxplot()
+```
+
+```{r}
+ggplot(metadata, aes(ageBinned, chao1)) +
+  geom_boxplot() +
+  ylim(0, 1500)
+```
+
+## Age x habitat
+
+```{r}
+ggplot(metadata, aes(ageBinned, shannon, fill = habitat)) +
+  geom_boxplot()
+```
+
+Stronger decrease in deciduous confirms model results. Though model indicates decrease in coniferous and plot suggests increase
+```{r}
+ggplot(metadata, aes(ageBinned, chao1, fill = habitat)) +
+  geom_boxplot() +
+  ylim(0, 1500)
+```
+
+## Distance to edge
+Positive trend robust to dropping teh couple of very large distance samples
+```{r}
+ggplot(metadata, aes(DistanceToEdge, shannon)) +
+  geom_point() +
+  geom_smooth(method=lm)
+
+ggplot(subset(metadata, DistanceToEdge<50), aes(DistanceToEdge, shannon)) +
+  geom_point() +
+  geom_smooth(method=lm)
+```
+

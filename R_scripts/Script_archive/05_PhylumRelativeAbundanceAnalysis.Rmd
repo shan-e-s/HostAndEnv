@@ -1,0 +1,319 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Phylum relative abundance analyses
+
+Notes:
+* Enrico advised binomial model because im dealing with proportions. 
+
+* Binomial model expects 2 column response variable of successes vs failures. Which in my case will be number of proteobacteria detected vs number of other bacteria detected. Specifically to my dataframe this will be "Abundance" vs "Abundance - NumberOfReads". 
+
+* According to Zuur book could also model w/ response as simple relative abundance as in other models. BUT Enrico says if this method used, i would have to account for sample depth somehow.
+
+* See Gillingham flamingo paper for similar analysis
+
+```{r Housekeeping, echo=FALSE}
+rm(list=ls())
+#set.seed(111)
+```
+
+
+```{r Set-up, message=FALSE, echo=FALSE}
+# libraries
+#install.packages("tidyverse", dependencies = T)
+library(vegan)  ##note had trouble installing, needed to install gfortran first
+library(tidyverse) #
+library(phyloseq) 
+library(lme4)
+library(metagenomeSeq)
+library(microbiome)
+library(car)
+library(gridExtra)
+library(ggpubr)
+library(lmerTest) # NOTE: overloads lme4 and extends test to provide p-values AND therefore causes DHARMa to give a warning but doesnt appear to effect it
+library(DHARMa)
+library(MASS)
+library(kableExtra) # remember to cancel global option defaults of this pkg
+library(effects)
+library(Rmisc)
+
+```
+
+# Read-in Data
+
+```{r Read in data, warning=FALSE, echo=FALSE}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+```
+
+
+# Data cleaning
+
+Scale and centring numeric predictors
+
+```{r Data splits, echo=FALSE}
+# relevel ageBinned factor
+metadata$ageBinned <- relevel(metadata$ageBinned, "1week")
+
+# relevel habitat
+metadata$habitat <- relevel(metadata$habitat, "deciduous")
+
+# Split data into adult and nestlings. Use ageBinned("1week","2week","adult").
+# subset to nestlings
+## alt use meta() to extract metadata as df
+# phylo.nestlings <- subset_samples(phylo.spring, ageBinned=="1week"|ageBinned=="2week")
+# nestlings.meta <- meta(phylo.nestlings@sam_data)
+# 
+# # subset to adults
+phylo.adults <- subset_samples(phylo.spring, ageBinned=="adult")
+adults.meta <- meta(phylo.adults@sam_data)
+```
+
+```{r}
+#removed "QubitDNA"
+numeric.predictors <- c("Tarsus","Weight", "wing", "broodSizeWhenSampled", "broodSizeMax", "totalFledge", "clutchSize", "layDateFirst", "numberDeadPreRinged", "numberDeadPostRinged","scaled.mass","scaled.mass.wing.adult", "scaled.mass.tarsus.adult","scaled.mass.chick", "scaled.mass.tarsus", "scaled.mass.wing", "DistanceToEdge")
+
+# centre and scale numeric variables ie. subtract mean and divide by st. deviation
+metadata.scaled <- metadata
+metadata.scaled[,numeric.predictors] <- scale(metadata.scaled[,numeric.predictors])
+
+adults.meta.scaled <- adults.meta
+adults.meta.scaled[,numeric.predictors] <- scale(adults.meta.scaled[,numeric.predictors])
+# 
+# nestlings.meta.scaled <- nestlings.meta
+# nestlings.meta.scaled[,numeric.predictors] <- scale(nestlings.meta.scaled[,numeric.predictors])
+
+```
+
+# Relative abundance graph
+
+```{r, echo=FALSE, cache=TRUE, fig.cap="Relative abundance plot of phyla that have abundance >0.1."}
+# phylo.glom <-  tax_glom(phylo.spring, "Phylum", NArm = TRUE)  # fast, <2mins
+# ## transform to relative abundances
+# phylo.ra <- transform_sample_counts(phylo.glom, function(x){x / sum(x)})
+# 
+# # special phyloseq psmelt function retuns dataframe w/ otu abundances, taxa names and sample data
+# mot.ra <- psmelt(phylo.ra)
+# 
+# mot.filt <- mot.ra[mot.ra$Abundance>=0.1,] #returns table w/ phyla over 10%
+
+# # stacked barplot of abundances
+# ggplot(mot.filt,aes(x=Sample, y=Abundance, fill=Phylum)) +
+#   geom_bar(stat = "identity", width = 0.85) +
+#   theme(axis.text.x = element_blank(), axis.title.x = element_blank(), axis.ticks.x = element_blank()) +
+#   facet_grid(.~ageBinned, drop = TRUE, space = "free_x", scales = "free")  #group labels on horizontal axis
+# 
+
+```
+
+
+Mean relative abundance and SE
+*rename variables here to differentiate from variables in next chunk*
+```{r}
+# phylo.glom <-  tax_glom(phylo.spring, "Phylum", NArm = TRUE)  # fast, <2mins
+# ## transform to relative abundances
+# phylo.glom.ra <- transform_sample_counts(phylo.glom, function(x){x / sum(x)}) # uncomment to convert to relative abundance
+# 
+# mot <- psmelt(phylo.glom.ra)
+# # calc standard error
+# se <- function(x) sqrt(var(x)/length(x))
+# 
+# mot %>%
+#   group_by(Phylum) %>%
+#   summarise_at(vars(Abundance), funs(mean, se))%>%
+#   arrange(-mean)%>% 
+#   mutate_if(is.numeric, round, 3)
+```
+
+Create abundance column w/o converting to relative abundance.
+```{r}
+# sample_data(phylo.spring) <- metadata.scaled
+# phyla.glom.scaled <-  tax_glom(phylo.spring, "Phylum", NArm = TRUE)
+# melted.p.glom.scaled <- psmelt(phyla.glom.scaled)
+# 
+# saveRDS(phyla.glom.scaled, "../Data/05_phyla.glom.scaled.rds")
+# saveRDS(melted.p.glom.scaled, "../Data/05_melted.p.glom.scaled.rds")
+```
+
+Read in melted and scaled metadata with abundance (absolute rather than relative abundance)
+```{r}
+#phyla.glom.scaled <- readRDS("../Data/05_phyla.glom.scaled.rds")
+mot <- readRDS("../Data/05_melted.p.glom.scaled.rds")
+```
+
+```{r Split df by phyla}
+proteobacteria.df <- mot[mot$Phylum=="Proteobacteria",]
+firmicutes.df <- mot[mot$Phylum=="Firmicutes",]
+# tenericutes.df <- mot[mot$Phylum=="Tenericutes",]
+# bacteroidetes.df <- mot[mot$Phylum=="Bacteroidetes",]
+# actinobacteria.df <- mot[mot$Phylum=="Actinobacteria",]
+```
+
+Create adult only df for each phyla.
+```{r Adult only df}
+proteobacteria.df.adult <- proteobacteria.df[proteobacteria.df$ageBinned=="adult",] 
+firmicutes.df.adult <- firmicutes.df[firmicutes.df$ageBinned=="adult",]
+```
+
+# All birds Proteobacteria (global+final)
+
+```{r}
+ggplot(proteobacteria.df, aes(ageBinned, Abundance, color=habitat)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Proteobacteria abundance")
+
+ggplot(proteobacteria.df, aes(habitat, Abundance, color=ageBinned)) +
+  geom_boxplot() +
+ # geom_jitter(width = 0.2) +
+  ggtitle("Proteobacteria abundance")
+
+```
+
+```{r}
+my.backward.diff = matrix(c(-2/3, 1/3, 1/3, -1/3, -1/3, 2/3), ncol = 2)
+my.backward.diff
+```
+
+```{r}
+levels(proteobacteria.df$ageBinned) # verify: 1week,2week,adult
+#assigning the backward difference coding to ageBinned
+contrasts(proteobacteria.df$ageBinned) = my.backward.diff
+```
+
+Global and specific models the same, as indicated by AIC
+```{r Binomial model- Proteobacteria}
+binomial.response <- cbind(proteobacteria.df$Abundance,proteobacteria.df$NumberOfReads-proteobacteria.df$Abundance)
+
+all.proteo.global.select <- glmer(binomial.response ~  ageBinned * habitat * layDateFirst + ageBinned * broodSizeWhenSampled + habitat*DistanceToEdge +  (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = proteobacteria.df)
+
+summary(all.proteo.global.select)
+```
+
+Some deviation in residuals but not major (acording to Caroline)
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = all.proteo.global.select, n = 10000)
+plot(simulationOutput)
+```
+
+Plot age*habitat interaction for Proteobacteria model
+```{r}
+all.proteo.global.final.effects <- as.data.frame(effect("ageBinned:habitat", all.proteo.global.select))
+
+ggplot(all.proteo.global.final.effects, aes(x=ageBinned, y=fit, color=habitat,group=habitat)) + 
+    geom_point() + 
+    geom_line(size=1.2) +
+    geom_ribbon(aes(ymin=fit-se, ymax=fit+se, fill=habitat),alpha=0.3) +
+    theme_classic() + theme(text=element_text(size=20)) #+labs(title = "Reactivity by Daily Control Beliefs", x= "Daily Stressor (0=Did not occur, 1=Occurred)", y="Negative Affect", color="Daily Control Beliefs", fill="Daily Control Beliefs")
+```
+
+#All birds Firmicutes
+```{r}
+ggplot(firmicutes.df, aes(ageBinned, Abundance, color=habitat)) +
+  geom_boxplot() +
+  ggtitle("Firmicutes abundance") +
+  coord_cartesian(ylim=c(0,100000)) # limits axis without dropping observations
+```
+
+```{r}
+levels(firmicutes.df$ageBinned) # verify: 1week,2week,adult
+#assigning the backward difference coding to ageBinned
+contrasts(firmicutes.df$ageBinned) = my.backward.diff
+```
+
+Global model
+* WARNING: model nearly unidentifiable, rescale variables
+* trying different optimizer with more iterations but same problem
+```{r Binomial model- Firmicutes}
+binomial.response <- cbind(firmicutes.df$Abundance,firmicutes.df$NumberOfReads-firmicutes.df$Abundance)
+
+all.firmi.global <- glmer(binomial.response ~  ageBinned * habitat * layDateFirst + ageBinned * broodSizeWhenSampled + habitat*DistanceToEdge +  (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = firmicutes.df, glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 10000000)))
+
+summary(all.firmi.global)
+```
+
+AIC best model
+Dropping habitat interaction with distance fixes model WARNING above
+*final model*
+```{r}
+binomial.response <- cbind(firmicutes.df$Abundance,firmicutes.df$NumberOfReads-firmicutes.df$Abundance)
+
+all.firmi.select <- glmer(binomial.response ~  ageBinned * habitat * layDateFirst + ageBinned * broodSizeWhenSampled + DistanceToEdge +  (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, data = firmicutes.df) # fits well
+
+summary(all.firmi.select)
+```
+
+Residuals non-random but not terrible
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = all.firmi.select, n = 10000)
+plot(simulationOutput)
+```
+
+```{r}
+all.firmi.select.effects <- as.data.frame(effect("ageBinned:habitat", all.firmi.select))
+
+ggplot(all.firmi.select.effects, aes(x=ageBinned, y=fit, color=habitat,group=habitat)) + 
+    geom_point() + 
+    geom_line(size=1.2) +
+    geom_ribbon(aes(ymin=fit-se, ymax=fit+se, fill=habitat),alpha=0.3) +
+    theme_classic() + theme(text=element_text(size=20)) #+labs(title = "Reactivity by Daily Control Beliefs", x= "Daily Stressor (0=Did not occur, 1=Occurred)", y="Negative Affect", color="Daily Control Beliefs", fill="Daily Control Beliefs")
+```
+
+# Adult birds Proteobacteria
+
+Full model (mirror of alpha-div model) 
+```{r}
+#proteobacteria.df.adult <- proteobacteria.df.adult[!proteobacteria.df.adult$BIOM.ID=="SP7M.S10",] # extreme outlier for distance
+binomial.response <- cbind(proteobacteria.df.adult$Abundance,proteobacteria.df.adult$NumberOfReads-proteobacteria.df.adult$Abundance)
+
+adult.proteobacteria.global <- glmer(binomial.response ~ Sex * habitat * broodSizeWhenSampled + habitat * layDateFirst * Sex + habitat * DistanceToEdge + (1|site/nest) + (1|SequencePlate), family= binomial, data = proteobacteria.df.adult) 
+
+summary(adult.proteobacteria.global)
+```
+
+```{r}
+simOut <- simulateResiduals(adult.proteobacteria.global, n = 1000)
+plot(simOut)
+```
+
+Adult proteobacteria select
+Drop distance term from adu.pro.2 (AIC 90071.7) as non-significant in fixed and interaction terms
+* AIC drops by 2.9
+*final model*
+```{r}
+#proteobacteria.df.adult <- proteobacteria.df.adult[!proteobacteria.df.adult$BIOM.ID=="SP7M.S10",] # extreme outlier for distance
+binomial.response <- cbind(proteobacteria.df.adult$Abundance,proteobacteria.df.adult$NumberOfReads-proteobacteria.df.adult$Abundance)
+
+adult.proteobacteria.select <- glmer(binomial.response ~ Sex * habitat * broodSizeWhenSampled + layDateFirst * Sex + (1|site/nest) + (1|SequencePlate), family= binomial, data = proteobacteria.df.adult)
+
+summary(adult.proteobacteria.select)
+```
+
+```{r}
+simOut <- simulateResiduals(adult.proteobacteria.select, n = 1000)
+plot(simOut)
+```
+
+# Adult birds firmicutes
+
+Global adult firmicutes
+* residuals poor
+* final variable list, transform to improve residuals?
+```{r}
+#firmicutes.df.adult <- subset(firmicutes.df.adult, !BIOM.ID=="SP7M.S10")
+binomial.response <- cbind(firmicutes.df.adult$Abundance,firmicutes.df.adult$NumberOfReads-firmicutes.df.adult$Abundance)
+
+adult.firmicutes.global.final <- glmer(binomial.response ~  Sex * habitat * broodSizeWhenSampled + habitat * layDateFirst * Sex + habitat * DistanceToEdge + (1|site/nest) + (1|SequencePlate), family= binomial, data = firmicutes.df.adult, control=glmerControl(optCtrl=list(maxfun=200000)))
+
+summary(adult.firmicutes.global.final)
+```
+
+```{r}
+simOut <- simulateResiduals(adu.fir.1, n = 1000)
+plot(simOut)
+```
+
+
+

@@ -1,0 +1,265 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# library(effects)
+# library(ggeffects)
+# #library(insight)
+# 
+# library(data.table)
+# library(sjPlot)
+# library(sjmisc)
+# #library(interactions)
+# library(parameters)
+# library(see)
+# library(emmeans)
+#install.packages("see")
+#packageVersion("ggeffects")
+#library(broom)
+```
+
+# All birds shannon
+
+sj work around
+* use parameters package to extract table of values and then plot with associated parameters plot method
+* https://easystats.github.io/parameters/reference/model_parameters.averaging.html
+* https://easystats.github.io/see/articles/parameters.html
+```{r}
+avg1.parameters <- parameters::model_parameters(model.avg1, component = "full")
+
+plot(avg1.parameters, show_labels  = TRUE)
+```
+
+Plots look wrong compared to plotting by hand
+* Probably because im using the unstandardized 'metadata' with the standardized input models
+```{r}
+#emmip(model.avg1, c.habitat ~ ageBinned,CIs=TRUE, plotit = FALSE, data = metadata) # is it ok to use metadata when my inputs were standardized?
+#emmip(model.avg1, c.habitat ~ ageBinned,CIs=TRUE, plotit = T, data = metadata) # is it ok to use metadata when my inputs were standardized?
+emmip(model.avg2, c.habitat ~ ageBinned,CIs=TRUE, plotit = T, data = metadata) # is it ok to use metadata when my inputs were standardized?
+
+```
+
+```{r}
+dat <- emmip(model.avg2, c.habitat ~ ageBinned,CIs=TRUE, plotit = F, data = stdz.model@frame)
+
+ggplot(data = dat, aes(x=ageBinned, y=yvar, color=c.habitat)) + geom_boxplot()
+```
+
+## Age*habitat
+
+```{r}
+effects_age.habitat <- effects::effect(term= "ageBinned1:c.habitat", mod= model.avg1)
+
+x_df <- as.data.frame(effects_distance)
+
+ggplot() + 
+  geom_point(data=metadata, aes(habitat, shannon)) + 
+  geom_point(data=x_df, aes(x=habitat, y=fit), color="blue") +
+  geom_smooth(data=x_df, aes(x=habitat, y=fit), color="blue") +
+  geom_ribbon(data= x_df, aes(x=habitat, ymin=lower, ymax=upper), alpha= 0.3, fill="blue")
+#+
+```
+
+```{r}
+#tidy(model.avg1)
+```
+See https://github.com/strengejacke/ggeffects/issues/160
+
+```{r}
+pred1 <- ggpredict(model.avg2, terms = c("ageBinned", "c.habitat"), back.transform = T)
+pred1
+#pred1 <- ggpredict(model.avg1, terms = c("ageBinned1:c.habitat"))
+pred1$group <- ifelse(pred1$group=="-0.792682926829268", "conifer", "deciduous")
+plot(pred1)
+```
+
+From: https://www.researchgate.net/post/How_can_i_plot_Estimates_of_Average_Models_using_Full_Average_values
+
+```{r}
+m2_summary <- summary(model.avg2)
+df1 <- as.data.frame(m2_summary$coefmat.full)
+
+CI <- as.data.frame(confint(model.avg2, full=T)) # get confidence intervals for full model
+df1$CI.min <-CI$`2.5 %` #pulling out CIs and putting into same df as coefficient estimates
+df1$CI.max <-CI$`97.5 %`# order of coeffients same in both, so no mixups; but should check anyway
+setDT(df1, keep.rownames = "coefficient") #put rownames into column
+names(df1) <- gsub(" ", "", names(df1)) # remove spaces from column headers
+
+# fix ageBinned estimates in line with Backward difference coding
+df1.adj <- df1
+df1.adj[3,"Estimate"] <- (df1.adj[3,"Estimate"]) + (df1.adj[1,"Estimate"]) #ageBinned1
+df1.adj[4,"Estimate"] <- (df1.adj[3,"Estimate"]) - (df1.adj[4,"Estimate"]) #ageBinned2
+df1.adj[5,"Estimate"] <- (df1.adj[5,"Estimate"]) + (df1.adj[1,"Estimate"]) #habitat
+df1.adj[6,"Estimate"] <- (df1.adj[6,"Estimate"]) + (df1.adj[1,"Estimate"]) + df1.adj[5, "Estimate"] - (df1.adj[1,"Estimate"])  #ageBinned1+habitat
+df1.adj[7,"Estimate"] <- (df1.adj[6,"Estimate"]) - (df1.adj[7,"Estimate"]) + df1.adj[5, "Estimate"] - (df1.adj[1,"Estimate"]) #ageBinned2+habitat
+
+```
+
+```{r}
+df1.age.hab <- df1.adj[c(1,3,4,5,6,7),]
+df1.age.hab$Habitat <- c(rep("conifer",3), rep("deciduous",3))
+df1.age.hab$Age <- c("D8", "D15", "adult","D8", "D15", "adult")
+
+df1.age.hab$Age <- factor(df1.age.hab$Age, levels= c("D8", "D15", "adult"))
+
+```
+
+```{r}
+p1 <- ggplot(data=df1.age.hab, aes(x=Age, y=Estimate, group=Habitat, color=Habitat)) + #excluding intercept because estimates so much larger
+  geom_point(size=10, position=position_dodge(width=0.3)) + #points for coefficient estimates
+  theme_classic(base_size = 20)+ #clean graph
+  geom_errorbar(aes(ymin=Estimate-Std.Error, ymax=Estimate+Std.Error), colour ="black", # SE
+             width=.1, lwd=3, position=position_dodge(width=0.3)) +
+  ggtitle("Chao1 diversity: age*habitat with SE bars") +
+      theme(plot.title = element_text(size = 20, face = "bold"))
+
+ # geom_errorbar(aes(ymin=Estimate-AdjustedSE, ymax=Estimate+AdjustedSE), colour="blue", width=.2, lwd=2)) #adj SE
+              
+  #geom_errorbar(aes(ymin=CI.min, ymax=CI.max), colour="pink", width=.2,lwd=1) # CIs
+p1           
+```
+
+Are ageBinned variables plotted correctly? Considering custom contrasts? Maybe plotted correctly but should be interpreted differently, i.e. ageBinned1 looks significant on plot but isnt-maybe because model is testing how different from D8 rather than different from zero?
+```{r}
+ggplot(data=df1[2:11,], aes(x=coefficient, y=Estimate))+ #again, excluding intercept because estimates so much larger
+      geom_hline(yintercept=0, color = "red",linetype="dashed", lwd=1.5)+ #add dashed line at zero
+      geom_errorbar(aes(ymin=Estimate-AdjustedSE, ymax=Estimate+AdjustedSE), colour="blue", #adj SE
+                  width=0, lwd=1.5) +
+      coord_flip()+ # flipping x and y axes
+      geom_point(size=8)+theme_classic(base_size = 20)+ ylab("Coefficient")
+```
+
+```{r}
+#install.packages("sjPlot")
+
+#shannon.avg <- get.models(model.avg1, subset=1)[[1]]
+#summary(shannon.avg)
+#plot_model(shannon.avg)
+
+summary(model.avg1)
+plot_model(model.avg1, component = "conditional")
+plot_model(model.avg1, component = "full")
+plot_model(model.avg1, show.intercept = T)
+plot_model(model.avg1, show.values = T, value.offset = 0.3)
+```
+
+Replace conditional coefficients with full coefficients
+```{r}
+m <- model.avg1[["coefficients"]]
+model.avg1.hacked <- model.avg1
+m[2,] <- m[1,] 
+model.avg1.hacked[["coefficients"]] <- m
+
+```
+
+```{r}
+sum1 <- summary(model.avg1)
+sum1[["coefmat.subset"]] <- sum1[["coefmat.full"]]
+```
+
+P-values are incorrect (still conditional p-values)
+Are confint or SE's correct? They have changed anyway
+```{r}
+plot_model(model.avg1, show.values = T, value.offset = 0.3)
+
+plot_model(model.avg1.hacked, show.values = F, value.offset = 0.3)
+
+plot_model(sum1, show.values = T, value.offset = 0.3)
+```
+
+```{r}
+plot_model(model.avg1, type = "pred")
+#plot_model(model.avg1, type = "eff")
+#plot_model(model.avg1, type = "emm")
+plot_model(model.avg1, type = "int")
+plot_model(model.avg1, type = "pred", terms = c("z.DistanceToEdge", "c.habitat")) # tried se =T for standard errors but didnt work.
+
+```
+
+```{r}
+contrasts(metadata$ageBinned)
+contrasts(metadata$habitat)
+```
+
+# All birds chao1
+Just plot top model (greatest weight)
+model.avg2 for chao
+
+```{r}
+#get.models(model.set, subset=1)[[1]]
+chao.avg <- get.models(model.avg2, subset=1)[[1]]
+summary(chao.avg)
+```
+
+```{r}
+# Extract the prediction data frame
+pred.mm <- ggpredict(chao.avg, terms = c("ageBinned"))  # this gives overall predictions for the model
+
+# Plot the predictions 
+
+(ggplot(pred.mm) + 
+   geom_line(aes(x = x, y = predicted)) +          # slope
+   geom_ribbon(aes(x = x, ymin = predicted - std.error, ymax = predicted + std.error), 
+               fill = "lightgrey", alpha = 0.5) +  # error band
+   geom_point(data = metadata,                      # adding the raw data (scaled values)
+              aes(x = ageBinned, y = chao1, colour = habitat), position = "jitter") + 
+   labs(x = "Life-stage", y = "Chao1", 
+        title = "title") + 
+   theme_minimal() 
+)
+```
+
+```{r}
+broom::tidy(chao.avg)
+```
+
+Not working. Getting error: Error in eval(predvars, data, env) : object 'z.DistanceToEdge' not found
+* tried renaming variable in metadata but didnt work, not sure hwats causing error
+```{r}
+#metadata <- rename(metadata, DistanceToEdge=z.DistanceToEdge)
+effects_age.habitat <- effects::effect(term= ("ageBinned:c.habitat"), mod= chao.avg)
+
+x_df <- as.data.frame(effects_distance)
+
+ggplot() + 
+  geom_point(data=metadata, aes(habitat, shannon)) + 
+  geom_point(data=x_df, aes(x=habitat, y=fit), color="blue") +
+  geom_smooth(data=x_df, aes(x=habitat, y=fit), color="blue") +
+  geom_ribbon(data= x_df, aes(x=habitat, ymin=lower, ymax=upper), alpha= 0.3, fill="blue")
+```
+## Understand interaction
+
+```{r}
+chao.top.model <- lmer(log(chao1) ~ ageBinned * habitat + DistanceToEdge + (1|site/nest/bird.ID) + (1|SequencePlate), data = metadata, REML = T)
+summary(chao.top.model)
+
+stdz.model.ctm <- standardize(chao.top.model, standardize.y = F)
+summary(stdz.model.ctm)
+```
+
+```{r}
+cat_plot(model.avg1, pred = habitat, modx = ageBinned, data = metadata)
+```
+
+```{r}
+summary(chao.top.model)
+
+levels(metadata$habitat)
+
+cat_plot(chao.top.model, pred = habitat, modx = ageBinned, data = chao.top.model@frame)
+
+# effects_age.habitat <- effects::effect(term= "ageBinned:habitat", mod= chao.top.model)
+# 
+# x_df <- as.data.frame(effects_age.habitat)
+# 
+# ggplot() + 
+#   geom_point(data=metadata, aes(ageBinned, shannon)) + 
+#   geom_point(data=x_df, aes(x=ageBinned, y=fit), color="blue") +
+#   geom_smooth(data=x_df, aes(x=ageBinned, y=fit), color="blue") +
+#   geom_ribbon(data= x_df, aes(x=ageBinned, ymin=lower, ymax=upper), alpha= 0.3, fill="blue")
+```
+
+# Adult birds shannon
+# Adult birds chao1

@@ -1,0 +1,95 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Model validation of alpha diversity models
+
+Do model validation on global model or on models in 'top-models' which are used in model-averaged results?
+
+```{r}
+library(DHARMa)
+```
+
+# All birds shannon
+## Global
+
+Great fit
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = all.sh.lmm, n = 250)
+plot(simulationOutput)
+```
+
+## Top models
+Top model set has 2 models
+```{r}
+summary(model.avg1)
+```
+
+All residuals look good
+```{r}
+for (i in 1:2) {
+model <- get.models(model.avg1, subset=i)[[1]]
+simulationOutput <- simulateResiduals(fittedModel = model, n = 250)
+plot(simulationOutput)
+}
+```
+
+
+# All birds chao1
+Top model set contains 4 models
+```{r}
+summary(model.avg2)
+```
+
+Residuals  are good 
+```{r}
+for (i in 1:4) {
+model <- get.models(model.avg2, subset=i)[[1]]
+simulationOutput <- simulateResiduals(fittedModel = model, n = 250)
+plot(simulationOutput)
+}
+```
+
+# Adult shannon
+
+Top model set contains 4 models
+```{r}
+summary(model.avg3)
+```
+
+Residuals generally good except for model 2 
+```{r}
+for (i in 1:5) {
+model <- get.models(model.avg3, subset=i)[[1]]
+simulationOutput <- simulateResiduals(fittedModel = model, n = 250)
+plot(simulationOutput)
+}
+```
+
+# Adult chao1
+
+Top model set contains 7 models
+```{r}
+summary(model.avg4)
+```
+
+Residuals mostly show a pattern suggesting poor fit
+* brood size is causing humped fit: try quadratic term?
+```{r}
+for (i in 1:8) {
+model <- get.models(model.avg4, subset=i)[[1]]
+simulationOutput <- simulateResiduals(fittedModel = model, n = 250)
+plot(simulationOutput)
+}
+```
+
+
+
+
+
+
+
+
+
+

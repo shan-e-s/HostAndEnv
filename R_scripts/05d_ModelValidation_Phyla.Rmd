@@ -1,0 +1,160 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Model validation for relative abundance models
+
+```{r}
+library(DHARMa)
+```
+```{r}
+#Proteobacteria
+proteobacteria.model
+#Proteobacteria OLRE
+proteobacteria.modelOLRE
+#Firmicutes
+firmicutes.model
+# Firmicutes OLRE
+model.avg.firmicutes
+```
+
+# All birds proteobacteria
+
+Top model set contains 1 models
+```{r}
+summary(model.set.proteo)
+```
+Only one model in Proteobacteria top model set.
+* DHARMA gves error/warning "nKcase - wrong dimensions of response" because dharma expects a 2 column response for binomial (https://rdrr.io/cran/DHARMa/src/R/compatibility.R), warning eliminated and no difference in results if old style of binomial response (cbind:successes/failures) is used
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = proteobacteria.model, n = 250)
+plot(simulationOutput)
+
+simulationOutputOLRE <- simulateResiduals(fittedModel = proteobacteria.modelOLRE, n = 250)
+plot(simulationOutputOLRE)
+```
+
+Try plotting against individual predictors
+```{r}
+plotResiduals(simulationOutput, proteobacteria.df$ageBinned)
+plotResiduals(simulationOutput, proteobacteria.df$habitat)
+plotResiduals(simulationOutput, proteobacteria.df$DistanceToEdge)
+plotResiduals(simulationOutput, proteobacteria.df$layDateFirst)
+plotResiduals(simulationOutput, proteobacteria.df$broodSizeWhenSampled)
+```
+
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = proteo, n = 250)
+plot(simulationOutput)
+
+plotResiduals(simulationOutput, proteobacteria.df$OLRE)
+```
+
+```{r}
+mod1 <- glmer(binomial.response ~  ageBinned + habitat + layDateFirst + broodSizeWhenSampled + DistanceToEdge + (1|site/nest/bird.ID) + (1|SequencePlate), family= binomial, weights = NumberOfReads, data = proteobacteria.df)#
+car::vif(mod1)
+```
+
+```{r}
+simulationOutput = recalculateResiduals(simulationOutput , group = proteobacteria.df$site)
+testDispersion(simulationOutput)
+```
+
+# All birds firmicutes
+
+Top model set contains 1 model
+* same error as proteobacteria
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = firmicutes.model, n = 250)
+plot(simulationOutput)
+
+for (i in 1:3) {
+model <- get.models(model.avg.firmicutes, subset=i)[[1]]
+simulationOutput <- simulateResiduals(fittedModel = model, n = 250)
+plot(simulationOutput)
+}
+```
+
+```{r}
+model <- get.models(model.avg.firmicutes, subset=2)[[1]]
+simulationOutput <- simulateResiduals(fittedModel = model, n = 250)
+plot(simulationOutput)
+```
+
+Try plotting against individual predictors
+```{r}
+plotResiduals(simulationOutput, firmicutes.df$ageBinned)
+plotResiduals(simulationOutput, firmicutes.df$habitat)
+plotResiduals(simulationOutput, firmicutes.df$DistanceToEdge)
+plotResiduals(simulationOutput, firmicutes.df$layDateFirst)
+
+```
+
+All birds Firmicutes with OLRE
+```{r}
+for (i in 1:3) {
+model <- get.models(model.avg.firmicutes, subset=i)[[1]]
+simulationOutput <- simulateResiduals(fittedModel = model, n = 250)
+plot(simulationOutput)
+}
+```
+
+```{r}
+plotResiduals(simulationOutput, firmicutes.df$ageBinned)
+plotResiduals(simulationOutput, firmicutes.df$habitat)
+plotResiduals(simulationOutput, firmicutes.df$DistanceToEdge)
+plotResiduals(simulationOutput, firmicutes.df$layDateFirst)
+
+```
+
+# Adult birds proteobacteria
+Top model set contains x models
+```{r}
+summary(model.avg.proteobacteria.adult)
+```
+
+Residual vs predicted plot indicates strong pattern in residuals
+* dispersion test is almost significant so im adding individual level random effect (25/4/2022) to model, following DHARMa vignette
+```{r}
+for (i in 1:2) {
+model <- get.models(model.avg.proteobacteria.adult, subset=i)[[1]]
+simulationOutput <- simulateResiduals(fittedModel = model, n = 250)
+plot(simulationOutput)
+}
+```
+
+Try plotting against individual predictors
+* am i plotting the factors properly?
+* brood Size shows pattern
+```{r}
+plotResiduals(simulationOutput, as.factor(proteobacteria.adult.df$ageDays))
+plotResiduals(simulationOutput, proteobacteria.adult.df$Sex)
+plotResiduals(simulationOutput, proteobacteria.adult.df$broodSizeWhenSampled)
+plotResiduals(simulationOutput, proteobacteria.adult.df$DistanceToEdge)
+plotResiduals(simulationOutput, proteobacteria.adult.df$layDateFirst)
+
+```
+
+# Adult birds firmicutes
+Top model set contains x models
+```{r}
+summary(model.avg.firmicutes.adult)
+```
+
+```{r}
+for (i in 1:4) {
+model <- get.models(model.avg.firmicutes.adult, subset=i)[[1]]
+simulationOutput <- simulateResiduals(fittedModel = model, n = 250)
+plot(simulationOutput)
+}
+```
+
+```{r}
+res = recalculateResiduals(simulationOutput, group = firmicutes.adult.df$nest)
+plot(res)
+
+res = recalculateResiduals(simulationOutput, group = firmicutes.adult.df$SequencePlate)
+plot(res)
+```
+

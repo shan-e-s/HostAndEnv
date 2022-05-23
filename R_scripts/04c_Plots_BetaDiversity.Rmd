@@ -1,0 +1,183 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Plots for beta diversity
+
+# Set-up and libraries
+
+```{r Housekeeping, echo=FALSE}
+rm(list=ls())
+#set.seed(10)
+```
+
+
+```{r Set-up, message=FALSE, echo=FALSE}
+# libraries
+#install.packages("tidyverse", dependencies = T)
+library(vegan)  ##note had trouble installing, needed to install gfortran first
+library(tidyverse) #
+library(phyloseq) 
+library(microbiome)
+library(grid)
+# library(gridExtra)
+# library(ggpubr)
+# library(kableExtra)
+library(compositions)
+# library(ggfortify)
+# library(ggplot2)
+# library(cowplot)
+# 
+# library(arm)
+```
+
+# Data
+```{r Read in data, warning=FALSE, echo=FALSE}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+```
+
+Do i need to scale numeric variables?
+```{r}
+numeric.predictors <- c("QubitDNA","Tarsus","Weight", "wing", "broodSizeWhenSampled", "broodSizeMax", "totalFledge", "clutchSize", "layDateFirst", "numberDeadPreRinged", "numberDeadPostRinged","scaled.mass","scaled.mass.wing.adult", "scaled.mass.tarsus.adult","scaled.mass.chick", "scaled.mass.tarsus", "scaled.mass.wing", "DistanceToEdge")
+
+# centre and scale numeric variables ie. subtract mean and divide by st. deviation
+metadata.scaled <- metadata
+metadata.scaled[,numeric.predictors] <- scale(metadata.scaled[,numeric.predictors])
+
+# metadata.NoDups.scaled <- metadata.NoDups
+# metadata.NoDups.scaled[,numeric.predictors] <- scale(metadata.NoDups.scaled[,numeric.predictors])
+# 
+# adults.meta.scaled <- adults.meta
+# adults.meta.scaled[,numeric.predictors] <- scale(adults.meta.scaled[,numeric.predictors])
+```
+
+# All birds: CoDa
+
+Compositional method, use clr transform
+```{r}
+# Filter rare taxa
+phylo.knowles <- filter_taxa(phylo.spring, function(x) sum(x > 1) > (0.05*length(x)), TRUE)
+```
+
+```{r}
+# phylo.knowles.clr <- phylo.knowles
+# phylo.knowles.clr@otu_table <- otu_table(clr(phylo.knowles@otu_table), taxa_are_rows = F)
+# aitchison.dist.dups <- phyloseq::distance(phylo.knowles.clr, method = "euclidean")
+pk.otu.clr.dups <- clr(phylo.knowles@otu_table)
+aitchison.distance <- vegdist(pk.otu.clr.dups, method = "euclid")
+```
+
+PCA
+```{r}
+aitch.pca <- prcomp(aitchison.distance)
+```
+
+# Surface plot
+```{r}
+surf <- ordisurf(aitch.pca~broodSizeWhenSampled, data = metadata, main="", col="red")
+#metadata$broodSizeWhenSampled
+```
+
+## Ordisurf with ggplot
+```{r}
+# from Jennys email + https://chrischizinski.github.io/rstats/ordisurf/
+species.scores <- as.data.frame(scores(aitch.pca, choices=c(1,2), "species")) # where "species' are column names i.e. samples and choices refers to ordination axes i.e. PC1 and PC2
+#species.scores$birdID <- rownames(species.scores)
+species.scores$broodSize <- metadata$broodSizeWhenSampled
+names(species.scores)[c(1, 2)] <- c("x", "y")
+species.scores$z <- NA
+
+data.scores <- as.data.frame(scores(aitch.pca))
+data.scores$birdid <- rownames(data.scores)
+data.scores$brood <- metadata$broodSizeWhenSampled
+```
+
+Run ordination
+```{r}
+PC.sf <- ordisurf(aitch.pca ~ metadata$broodSizeWhenSampled, plot = FALSE, scaling = 3)
+head(PC.sf)
+```
+
+```{r}
+# do the 'linear predictors' in the PC.sf object correspond to brood sizes? ## No
+lp <- PC.sf[["linear.predictors"]]
+metadata$broodSizeWhenSampled
+
+cbind(lp, metadata$broodSizeWhenSampled)
+```
+
+We need to extract the contour information from dune.sf object. This is in the $grid. I wrote a function that will pull out this information and put it into a dataframe with the column headers ‘x’, ‘y’, and ‘z’.
+```{r}
+extract.xyz <- function(obj) {
+    xy <- expand.grid(x = obj$grid$x, y = obj$grid$y)
+    xyz <- cbind(xy, c(obj$grid$z))
+    names(xyz) <- c("x", "y", "z")
+    return(xyz)
+}
+
+contour.vals <- extract.xyz(obj = PC.sf)
+head(contour.vals)
+```
+
+
+```{r}
+p <- ggplot(data = contour.vals, aes(x, y, z = z)) + stat_contour(aes(colour = ..level..)) + 
+     theme_classic()
+
+print(p)
+```
+
+```{r}
+p + geom_point()
+```
+
+```{r}
+p <- p + geom_text(data = species.scores, aes(x = x, y = y, label = broodSize), 
+    colour = "red") + coord_equal() + theme_classic() + labs(x = "PC1", y = "PC2") + 
+    theme(panel.border = element_rect(fill = NA), axis.text.x = element_blank(), 
+        axis.text.y = element_blank(), legend.position = "none")
+
+print(p)
+```
+
+# ggordiplot
+```{r}
+#library(devtools)
+#install_github("jfq3/ggordiplots")
+library(ggordiplots)
+```
+
+```{r}
+gg_ordisurf(aitch.pca, metadata$broodSizeWhenSampled, var.label = "brood size")
+```
+
+# Practice with dune
+
+```{r}
+data("dune")
+head(dune)
+
+ord <- metaMDS(dune)
+```
+
+```{r}
+plot(ord, type = "n")
+points(ord, display = "sites", cex = 1, pch = 16, col = "red") #where sites are colnames
+text(ord, display = "species", cex = 1, col = "blue") #where rows are species names
+
+ord$species
+
+
+```
+
+```{r}
+species.scores <- as.data.frame(scores(ord, "species"))
+species.scores$species <- rownames(species.scores)
+names(species.scores)[c(1, 2)] <- c("x", "y")
+species.scores$z <- NA
+
+head(species.scores)
+```
+
