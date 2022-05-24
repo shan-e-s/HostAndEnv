@@ -2,3 +2,16 @@
 .Rhistory
 .RData
 .Ruserdata
+
+.DS_Store
+Data/.DS_Store
+Data/Bird_data
+Data/Bird_microbiome_*
+Data/dredgeSaves
+Data/05_*
+Data/metadata_NoDups.rds
+Data/Shapefiles/
+
+R_scripts/*.nb.html
+
+R_figures/
