@@ -13,9 +13,16 @@ rm(list=ls())
 ```
 
 
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("microbiome")
+```
+
 ```{r Set-up, message=FALSE, echo=FALSE}
 # libraries
-#install.packages("tidyverse", dependencies = T)
+install.packages("phyloseq", dependencies = T)
 library(vegan)  ##note had trouble installing, needed to install gfortran first
 library(tidyverse) #
 library(phyloseq) 
