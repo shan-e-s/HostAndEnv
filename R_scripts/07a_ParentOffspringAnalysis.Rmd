@@ -204,13 +204,13 @@ summary(arm::standardize(offspring.parents.firmic))
 ### shannon
 
 ```{r}
-offspring.female.shannon <- lmer(nst.shannon ~ fe.shannon + (1|site/nest/bird.ID), data = nstlng.adult.df)
+offspring.female.shannon <- lmer(nst.shannon ~ fe.shannon*ageBinned + (1|site/nest/bird.ID), data = nstlng.adult.df)
 summary(arm::standardize(offspring.female.shannon))
 ```
 
 ### chao
 ```{r}
-offspring.female.chao <- lmer(nst.chao1 ~ fe.chao1 + (1|site/nest/bird.ID), data = nstlng.adult.df)
+offspring.female.chao <- lmer(nst.chao1 ~ fe.chao1*ageBinned + (1|site/nest/bird.ID), data = nstlng.adult.df)
 summary(arm::standardize(offspring.female.chao))
 ```
 
@@ -221,7 +221,7 @@ How to control for adult number of reads? Use fraction?
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.pro.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.female.proteo <- glmer(binomial.response ~  fe.pro.abu.RA + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+offspring.female.proteo <- glmer(binomial.response ~  fe.pro.abu.RA*ageBinned + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
 summary(arm::standardize(offspring.female.proteo))
 ```
 
@@ -230,7 +230,7 @@ summary(arm::standardize(offspring.female.proteo))
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.fir.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.female.firmic <- glmer(binomial.response ~  fe.fir.abu.RA + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+offspring.female.firmic <- glmer(binomial.response ~  fe.fir.abu.RA*ageBinned + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
 summary(arm::standardize(offspring.female.firmic))
 ```
 
@@ -238,13 +238,13 @@ summary(arm::standardize(offspring.female.firmic))
 
 ### shannon
 ```{r}
-offspring.male.shannon <- lmer(nst.shannon ~ m.shannon + (1|site/nest/bird.ID), data = nstlng.adult.df)
+offspring.male.shannon <- lmer(nst.shannon ~ m.shannon*ageBinned + (1|site/nest/bird.ID), data = nstlng.adult.df)
 summary(arm::standardize(offspring.male.shannon))
 ```
 
 ### chao
 ```{r}
-offspring.male.chao <- lmer(nst.chao1 ~ m.chao1 + (1|site/nest/bird.ID), data = nstlng.adult.df)
+offspring.male.chao <- lmer(nst.chao1 ~ m.chao1*ageBinned + (1|site/nest/bird.ID), data = nstlng.adult.df)
 summary(arm::standardize(offspring.male.chao))
 ```
 
@@ -255,7 +255,7 @@ How to control for adult number of reads? Use fraction?
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.pro.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.male.proteo <- glmer(binomial.response ~  m.pro.abu.RA + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+offspring.male.proteo <- glmer(binomial.response ~  m.pro.abu.RA*ageBinned + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
 summary(arm::standardize(offspring.male.proteo))
 ```
 
@@ -264,7 +264,7 @@ summary(arm::standardize(offspring.male.proteo))
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.fir.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.male.firmic <- glmer(binomial.response ~  m.fir.abu.RA + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+offspring.male.firmic <- glmer(binomial.response ~  m.fir.abu.RA*ageBinned + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
 summary(arm::standardize(offspring.male.firmic))
 ```
 
