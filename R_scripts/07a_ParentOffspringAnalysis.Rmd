@@ -17,6 +17,7 @@ library(phyloseq)
 library(microbiome)
 library(tidyverse)
 library(lmerTest)
+library(kableExtra)
 ```
 
 ```{r}
@@ -268,4 +269,93 @@ summary(arm::standardize(offspring.male.firmic))
 ```
 
 
+# results
+### Parents results
+```{r}
+ls()
+```
 
+```{r}
+offspring.parents.shannon.result <- summary(arm::standardize(offspring.parents.shannon))[["coefficients"]][,c(1,2,4,5)]
+offspring.parents.chao.result<- summary(arm::standardize(offspring.parents.chao))[["coefficients"]][,c(1,2,4,5)] #drop df column to allow rbind downstream
+offspring.parents.proteo.result <- summary(arm::standardize(offspring.parents.proteo))[["coefficients"]]
+offspring.parents.firmic.result <- summary(arm::standardize(offspring.parents.firmic))[["coefficients"]]
+```
+
+```{r}
+#make df of lmer output
+# dropping intercept
+parent.df <- as_tibble(rbind(offspring.parents.shannon.result[c(2,3),], offspring.parents.chao.result[c(2,3),], offspring.parents.proteo.result[c(2,3),], offspring.parents.firmic.result[c(2,3),]), rownames="Independent variables") %>% 
+  dplyr::rename("P"="Pr(>|t|)") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "z.fe", replacement = "female") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "z.m", replacement = "male") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "pro.abu.RA", replacement = "proteobacteria") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "fir.abu.RA", replacement = "firmicutes") %>% 
+  #search for z.fe or z.m and replace
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P=ifelse(P==0,"<0.001",P)) #%>% 
+  #mutate(P=ifelse(P<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+ # mutate(P=ifelse(P>=0.05 & P<=0.06,str_c(P,"  ."),P))
+
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+parent.results <- kable(parent.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) Shannon diversity ",1, 2) %>%
+  kableExtra::group_rows("(b) Chao diversity ",3, 4) %>%
+  kableExtra::group_rows("(c) Proteobacteria RA ",5, 6) %>%
+  kableExtra::group_rows("(d) Firmicutes RA ",7,8) %>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+parent.results
+```
+
+### Female results
+```{r}
+offspring.female.shannon.result <- summary(arm::standardize(offspring.female.shannon))[["coefficients"]][,c(1,2,4,5)]
+offspring.female.chao.result<- summary(arm::standardize(offspring.female.chao))[["coefficients"]][,c(1,2,4,5)] #drop df column to allow rbind downstream
+offspring.female.proteo.result <- summary(arm::standardize(offspring.female.proteo))[["coefficients"]]
+offspring.female.firmic.result <- summary(arm::standardize(offspring.female.firmic))[["coefficients"]]
+```
+
+this isnt working well because of single variable, when intercept is dropped teh object becomes a numeric vector and loses the rowname i.e. variable name
+```{r}
+check <- offspring.female.shannon.result[]
+check2 <- (offspring.female.shannon.result[2,])
+check3 <- matrix(offspring.female.shannon.result[2,])
+check4 <- data.frame(offspring.female.shannon.result[2,])
+
+class(check)
+class(check2)
+class(check3)
+
+#make df of lmer output
+# dropping intercept
+female.df <- as_tibble(rbind(offspring.female.shannon.result[], offspring.female.chao.result[2,], offspring.female.proteo.result[2,], offspring.female.firmic.result[2,]), rownames="Independent variables") %>% 
+  dplyr::rename("P"="Pr(>|t|)") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "z.fe", replacement = "female") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "z.m", replacement = "male") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "pro.abu.RA", replacement = "proteobacteria") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "fir.abu.RA", replacement = "firmicutes") %>% 
+  #search for z.fe or z.m and replace
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P=ifelse(P==0,"<0.001",P)) #%>% 
+  #mutate(P=ifelse(P<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+ # mutate(P=ifelse(P>=0.05 & P<=0.06,str_c(P,"  ."),P))
+
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+female.results <- kable(female.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) Shannon diversity ",1,1) %>%
+  kableExtra::group_rows("(b) Chao diversity ",2,2) %>%
+  kableExtra::group_rows("(c) Proteobacteria RA ",3,3) %>%
+  kableExtra::group_rows("(d) Firmicutes RA ",4,4) %>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+female.results
+```
+
+### Male results
