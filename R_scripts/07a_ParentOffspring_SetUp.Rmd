@@ -1,0 +1,147 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Set-up script for ParentOffspringAnalysis
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+library(phyloseq)
+library(microbiome)
+library(tidyverse)
+library(lmerTest)
+```
+
+```{r}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+```
+
+```{r}
+mot <- readRDS("../Data/05_melted.phyla.glom.rds")
+
+proteobacteria.df <- mot[mot$Phylum=="Proteobacteria",]
+firmicutes.df <- mot[mot$Phylum=="Firmicutes",]
+
+```
+
+## check samples by nest
+how many rows have either male or female sampled
+```{r}
+tab1 <- data.frame(unclass(table(metadata$nest, metadata$IDLetter)))
+
+sum(tab1$M==1) #how many males sampled
+sum(tab1$Fe==1) # how many females sampled
+sum(tab1$M==1 & tab1$Fe==1) #how many males and females sampled
+sum(tab1$M==1 | tab1$Fe==1) #how many males or females sampled
+
+which(tab1$M==1 & tab1$Fe==1) # which nests have male and female sampled
+which(tab1$M==1 | tab1$Fe==1) # which nests have male and female sampled
+```
+
+get separate nestling and adult dataframes
+```{r}
+
+# # subset to nestlings
+phylo.nestlings <- subset_samples(phylo.spring, ageBinned!="adult")
+nestling.metadata <- meta(phylo.nestlings@sam_data)
+
+# # subset to adults
+phylo.adults <- subset_samples(phylo.spring, ageBinned=="adult")
+adults.metadata <- meta(phylo.adults@sam_data)
+#adults.limited <- adults.metadata[,c("nest", "bird.ID","Sex", "chao1", "shannon")]
+
+#dput(colnames(adults.metadata))
+```
+
+make separate simplified dfs for nestlings, females and males
+```{r}
+nestling.simple <- nestling.metadata[,c("BIOM.ID" ,"nest", "bird.ID","IDLetter", "chao1", "shannon", "site", "ageBinned")]
+
+fe.simple <- subset(adults.metadata, IDLetter == "Fe")[,c("nest", "bird.ID","IDLetter", "chao1", "shannon")]
+
+m.simple <- subset(adults.metadata, IDLetter == "M")[,c("nest", "bird.ID","IDLetter", "chao1", "shannon")]
+```
+
+rename columns to reflect trait origin and add parent IDs as unique cols
+```{r}
+nestling.simple <- nestling.simple %>% rename(nst.chao1=chao1, nst.shannon = shannon)
+
+fe.simple <- fe.simple %>% rename(fe.chao1=chao1, fe.shannon = shannon, fe.ID = bird.ID) %>% select(-IDLetter)
+#fe.simple$fe.ID <- fe.simple$bird.ID
+
+m.simple <- m.simple %>% rename(m.chao1=chao1, m.shannon = shannon, m.ID = bird.ID) %>% select(-IDLetter)
+#m.simple$m.ID <- m.simple$bird.ID
+```
+
+merge adult info to by nest
+```{r}
+nstlng.adult.df <- merge(nestling.simple, fe.simple, by = "nest", all.x = TRUE) %>% merge(.,m.simple, by = "nest", all.x = TRUE)
+```
+
+## add phyla RA info
+
+Add proteobacteria trait
+```{r}
+# add for nestlings
+df1 <- proteobacteria.df %>% select(BIOM.ID, Abundance, NumberOfReads)
+df2 <- merge(nstlng.adult.df, df1, by = "BIOM.ID", all.x = TRUE) %>% rename(nst.pro.abu = Abundance, nst.NumberOfReads = NumberOfReads)
+
+# add for Fe
+df1 <- proteobacteria.df %>% select(bird.ID, Abundance, NumberOfReads) %>% rename(fe.ID = bird.ID)
+df2 <- merge(df2, df1, by = "fe.ID", all.x = TRUE) %>% rename(fe.pro.abu = Abundance, fe.NumberOfReads = NumberOfReads)
+
+# add for M
+df1 <- proteobacteria.df %>% select(bird.ID, Abundance, NumberOfReads) %>% rename(m.ID = bird.ID)
+df2 <- merge(df2, df1, by = "m.ID", all.x = TRUE) %>% rename(m.pro.abu = Abundance, m.NumberOfReads = NumberOfReads)
+
+nstlng.adult.df <- df2
+```
+
+Add firmicutes trait
+* Dont need NumberOFReads
+```{r}
+# add for nestlings
+df1 <- firmicutes.df %>% select(BIOM.ID, Abundance)
+df2 <- merge(nstlng.adult.df, df1, by = "BIOM.ID", all.x = TRUE) %>% rename(nst.fir.abu = Abundance)
+
+# add for Fe
+df1 <- firmicutes.df %>% select(bird.ID, Abundance) %>% rename(fe.ID = bird.ID)
+df2 <- merge(df2, df1, by = "fe.ID", all.x = TRUE) %>% rename(fe.fir.abu = Abundance)
+
+# add for M
+df1 <- firmicutes.df %>% select(bird.ID, Abundance) %>% rename(m.ID = bird.ID)
+df2 <- merge(df2, df1, by = "m.ID", all.x = TRUE) %>% rename(m.fir.abu = Abundance)
+
+nstlng.adult.df <- df2
+```
+
+Make adult RA a fraction
+```{r}
+
+#female
+nstlng.adult.df$fe.pro.abu.RA <- nstlng.adult.df$fe.pro.abu/nstlng.adult.df$fe.NumberOfReads
+
+nstlng.adult.df$fe.fir.abu.RA <- nstlng.adult.df$fe.fir.abu/nstlng.adult.df$fe.NumberOfReads
+
+#male
+nstlng.adult.df$m.pro.abu.RA <- nstlng.adult.df$m.pro.abu/nstlng.adult.df$m.NumberOfReads
+
+nstlng.adult.df$m.fir.abu.RA <- nstlng.adult.df$m.fir.abu/nstlng.adult.df$m.NumberOfReads
+
+```
+
+
+# check final df out
+```{r}
+dput(colnames(nstlng.adult.df))
+```
+
+```{r}
+saveRDS(nstlng.adult.df, file = "../Data/ParentOffspringDF.rds")
+```
+
