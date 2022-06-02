@@ -60,7 +60,7 @@ adults.metadata <- meta(phylo.adults@sam_data)
 
 make separate simplified dfs for nestlings, females and males
 ```{r}
-nestling.simple <- nestling.metadata[,c("BIOM.ID" ,"nest", "bird.ID","IDLetter", "chao1", "shannon", "site", "ageBinned")]
+nestling.simple <- nestling.metadata[,c("BIOM.ID" ,"nest", "bird.ID","IDLetter", "chao1", "shannon", "site", "ageBinned", "habitat", "broodSizeWhenSampled", "DistanceToEdge", "layDateFirst")]
 
 fe.simple <- subset(adults.metadata, IDLetter == "Fe")[,c("nest", "bird.ID","IDLetter", "chao1", "shannon")]
 
