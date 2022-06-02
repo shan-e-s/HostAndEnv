@@ -85,7 +85,7 @@ summary(arm::standardize(offspring.female.shannon))
 
 ### chao
 ```{r}
-offspring.female.chao <- lmer(nst.chao1 ~ fe.chao1*ageBinned + ageBinned * habitat+ (1|site/nest/bird.ID), data = nstlng.adult.df)
+offspring.female.chao <- lmer(log(nst.chao1) ~ fe.chao1*ageBinned + ageBinned * habitat+ (1|site/nest/bird.ID), data = nstlng.adult.df)
 summary(arm::standardize(offspring.female.chao))
 ```
 
@@ -119,7 +119,7 @@ summary(arm::standardize(offspring.male.shannon))
 
 ### chao
 ```{r}
-offspring.male.chao <- lmer(nst.chao1 ~ m.chao1*ageBinned + (1|site/nest/bird.ID), data = nstlng.adult.df)
+offspring.male.chao <- lmer(log(nst.chao1) ~ m.chao1*ageBinned + (1|site/nest/bird.ID), data = nstlng.adult.df)
 summary(arm::standardize(offspring.male.chao))
 ```
 
