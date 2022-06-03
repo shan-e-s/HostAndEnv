@@ -78,69 +78,126 @@ summary(arm::standardize(offspring.parents.firmic))
 # Female only
 ### shannon
 
+Drop bird ID as singular fit
 ```{r}
-offspring.female.shannon <- lmer(nst.shannon ~ fe.shannon * ageBinned + ageBinned * habitat+ (1|site/nest/bird.ID), data = nstlng.adult.df)
-summary(arm::standardize(offspring.female.shannon))
+offspring.female.shannon <- lmer(nst.shannon ~ fe.shannon * ageBinned + ageBinned * habitat+ (1|site/nest), data = nstlng.adult.df)
+
+offspring.female.shannon.stdz <- arm::standardize(offspring.female.shannon)
+summary(offspring.female.shannon.stdz)
 ```
 
 ### chao
+Drop bird ID as singular fit
 ```{r}
-offspring.female.chao <- lmer(log(nst.chao1) ~ fe.chao1*ageBinned + ageBinned * habitat+ (1|site/nest/bird.ID), data = nstlng.adult.df)
-summary(arm::standardize(offspring.female.chao))
+offspring.female.chao <- lmer(log(nst.chao1) ~ fe.chao1*ageBinned + ageBinned * habitat+ (1|site/nest), data = nstlng.adult.df)
+
+offspring.female.chao.stdz <- arm::standardize(offspring.female.chao)
+summary(offspring.female.chao.stdz)
 ```
 
 
 How to control for adult number of reads? Use fraction?
 
 ### Proteobacteria RA
+
+Model nearly unidentifiable even after rescaling
+* OLRE fixes unidentifiable warning but results change alot + (1|BIOM.ID), check for over dispersion
+* try dropping habitat*distance: now model fails to converge
+* try dropping broodSizeWhenSampled*DistanceToEdge: residuals get worse, model still fails to converge
+* try dropping habitat*broodSizeWhenSampled : model still fails to converge
+* added control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)) and this fixed convergence and unidentifiable issue
+* tried to re-add habitat*broodSizeWhenSampled and model failed again
+* re-added broodSizeWhenSampled*DistanceToEdge: reisduals improve model still converges
+* re-added habitat*DistanceToEdge: residuals fine, model converges
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.pro.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.female.proteo <- glmer(binomial.response ~  fe.pro.abu.RA*ageBinned + ageBinned*habitat + ageBinned*broodSizeWhenSampled + ageBinned*DistanceToEdge + ageBinned*layDateFirst + habitat*broodSizeWhenSampled + habitat*DistanceToEdge + broodSizeWhenSampled*DistanceToEdge + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
-summary(arm::standardize(offspring.female.proteo))
+offspring.female.proteo <- glmer(binomial.response ~  fe.pro.abu.RA*ageBinned + ageBinned*habitat + ageBinned*broodSizeWhenSampled + ageBinned*DistanceToEdge + ageBinned*layDateFirst + broodSizeWhenSampled*DistanceToEdge + habitat*DistanceToEdge +(1|site/nest/bird.ID) , family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df, control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+
+offspring.female.proteo.stdz <- arm::standardize(offspring.female.proteo)
+  
+summary(offspring.female.proteo.stdz)
 ```
 
 ### Firmicutes RA
 
+DHARMa plots show pattern
+* try dropping less important interactions: habitat*distance is not significant and doesnt contain key variables of interest ie age or parent microbiome trait
+* fit improves after dropping habitat*DistanceToEdge
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.fir.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.female.firmic <- glmer(binomial.response ~  fe.fir.abu.RA*ageBinned + ageBinned*habitat + ageBinned*broodSizeWhenSampled + ageBinned*DistanceToEdge + ageBinned*layDateFirst + habitat*broodSizeWhenSampled + habitat*DistanceToEdge + broodSizeWhenSampled*DistanceToEdge + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
-summary(arm::standardize(offspring.female.firmic))
+#removed: habitat*DistanceToEdge
+offspring.female.firmic <- glmer(binomial.response ~  fe.fir.abu.RA*ageBinned + ageBinned*habitat + ageBinned*broodSizeWhenSampled + ageBinned*DistanceToEdge + ageBinned*layDateFirst + habitat*broodSizeWhenSampled + broodSizeWhenSampled*DistanceToEdge + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+
+offspring.female.firmic.stdz <- arm::standardize(offspring.female.firmic)
+  
+summary(offspring.female.firmic.stdz)
 ```
 
 # Male only
 
 ### shannon
+
+Drop bird.ID due to singular fit
 ```{r}
-offspring.male.shannon <- lmer(nst.shannon ~ m.shannon*ageBinned + (1|site/nest/bird.ID), data = nstlng.adult.df)
-summary(arm::standardize(offspring.male.shannon))
+offspring.male.shannon <- lmer(nst.shannon ~ m.shannon*ageBinned + ageBinned*habitat + (1|site/nest), data = nstlng.adult.df)
+
+offspring.male.shannon.stdz <-  arm::standardize(offspring.male.shannon)
+
+summary(offspring.male.shannon.stdz)
 ```
 
 ### chao
+Drop bird.ID due to singular fit
+
+DHARMa residuals are very bad
+* try dropping age*habitat: residuals worse
+* try dropping age*chao interaction: residuals slightly improve but still very poor
+* havent found satisfactory improvement to residuals
 ```{r}
-offspring.male.chao <- lmer(log(nst.chao1) ~ m.chao1*ageBinned + (1|site/nest/bird.ID), data = nstlng.adult.df)
-summary(arm::standardize(offspring.male.chao))
+offspring.male.chao <- lmer(log(nst.chao1) ~ m.chao1*ageBinned + ageBinned * habitat + (1|site/nest), data = nstlng.adult.df)
+
+offspring.male.chao.stdz <-  arm::standardize(offspring.male.chao)
+
+summary(offspring.male.chao.stdz)
 ```
 
 
 How to control for adult number of reads? Use fraction?
 
 ### Proteobacteria RA
+DHARMA plots very poor, 
+* try removing habitat*DistanceToEdge: residuals still very poor
+* try removing broodSizeWhenSampled*DistanceToEdge : resiudals slightly better
+* try removing habitat * brood size: resid slightly better again
+* try removing lay date: no difference to resid, put lay date back in
+* try removing brood size: huge improvement in residuals
+* added habitat*DistanceToEdge back in resid improve again
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.pro.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.male.proteo <- glmer(binomial.response ~  m.pro.abu.RA*ageBinned + ageBinned*habitat + ageBinned*broodSizeWhenSampled + ageBinned*DistanceToEdge + ageBinned*layDateFirst + habitat*broodSizeWhenSampled + habitat*DistanceToEdge + broodSizeWhenSampled*DistanceToEdge + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
-summary(arm::standardize(offspring.male.proteo))
+offspring.male.proteo <- glmer(binomial.response ~  m.pro.abu.RA*ageBinned + ageBinned*habitat + ageBinned*layDateFirst + ageBinned*DistanceToEdge + habitat*DistanceToEdge + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+
+offspring.male.proteo.stdz <- (arm::standardize(offspring.male.proteo))
+summary(offspring.male.proteo.stdz)
 ```
 
 ### Firmicutes RA
 
+DMARMA residuals very poor
+* try removing  broodSizeWhenSampled*DistanceToEdge: residuals even worse
+* try removing habitat*broodSizeWhenSampled: reisduals still terrible
+* try removing ageBinned*broodSizeWhenSampled: still terrible
+* removing + habitat*DistanceToEdge: much improved
+* tried adding ageBinned*broodSizeWhenSampled back in: residuals got much worse
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.fir.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.male.firmic <- glmer(binomial.response ~  m.fir.abu.RA*ageBinned + ageBinned*habitat + ageBinned*broodSizeWhenSampled + ageBinned*DistanceToEdge + ageBinned*layDateFirst + habitat*broodSizeWhenSampled + habitat*DistanceToEdge + broodSizeWhenSampled*DistanceToEdge + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
-summary(arm::standardize(offspring.male.firmic))
+offspring.male.firmic <- glmer(binomial.response ~  m.fir.abu.RA*ageBinned + ageBinned*habitat + ageBinned*DistanceToEdge + ageBinned*layDateFirst + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+
+offspring.male.firmic.stdz <- arm::standardize(offspring.male.firmic)
+summary(offspring.male.firmic.stdz)
 ```
 
 
@@ -154,20 +211,10 @@ offspring.female.proteo.result <- summary(arm::standardize(offspring.female.prot
 offspring.female.firmic.result <- summary(arm::standardize(offspring.female.firmic))[["coefficients"]]
 ```
 
-this isnt working well because of single variable, when intercept is dropped teh object becomes a numeric vector and loses the rowname i.e. variable name
 ```{r}
-check <- offspring.female.shannon.result[]
-check2 <- (offspring.female.shannon.result[2,])
-check3 <- matrix(offspring.female.shannon.result[2,])
-check4 <- data.frame(offspring.female.shannon.result[2,])
-
-class(check)
-class(check2)
-class(check3)
-
 #make df of lmer output
 # dropping intercept
-female.df <- as_tibble(rbind(offspring.female.shannon.result[], offspring.female.chao.result[2,], offspring.female.proteo.result[2,], offspring.female.firmic.result[2,]), rownames="Independent variables") %>% 
+female.df <- as_tibble(rbind(offspring.female.shannon.result[2:6,], offspring.female.chao.result[2:6,], offspring.female.proteo.result[2:14,], offspring.female.firmic.result[2:14,]), rownames="Independent variables") %>% 
   dplyr::rename("P"="Pr(>|t|)") %>% 
   mutate_if(is.character, str_replace_all, pattern = "z.fe", replacement = "female") %>% 
   mutate_if(is.character, str_replace_all, pattern = "z.m", replacement = "male") %>% 
@@ -183,10 +230,10 @@ female.df <- as_tibble(rbind(offspring.female.shannon.result[], offspring.female
 # make df into kable
 ## this is in html, dosnt render in word doc # but can copy-paste
 female.results <- kable(female.df, format = "html", table.attr = "style = \"color: black;\"") %>%
-  kableExtra::group_rows("(a) Shannon diversity ",1,1) %>%
-  kableExtra::group_rows("(b) Chao diversity ",2,2) %>%
-  kableExtra::group_rows("(c) Proteobacteria RA ",3,3) %>%
-  kableExtra::group_rows("(d) Firmicutes RA ",4,4) %>%
+  kableExtra::group_rows("(a) Shannon diversity ",1,5) %>%
+  kableExtra::group_rows("(b) Chao diversity ",6,10) %>%
+  kableExtra::group_rows("(c) Proteobacteria RA ",11,23) %>%
+  kableExtra::group_rows("(d) Firmicutes RA ",24,36) %>%
   kableExtra::kable_styling(full_width = F) #%>%
   #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
 
@@ -194,3 +241,39 @@ female.results
 ```
 
 ### Male results
+
+```{r}
+offspring.male.shannon.result <- summary(arm::standardize(offspring.male.shannon))[["coefficients"]][,c(1,2,4,5)]
+offspring.male.chao.result<- summary(arm::standardize(offspring.male.chao))[["coefficients"]][,c(1,2,4,5)] #drop df column to allow rbind downstream
+offspring.male.proteo.result <- summary(arm::standardize(offspring.male.proteo))[["coefficients"]]
+offspring.male.firmic.result <- summary(arm::standardize(offspring.male.firmic))[["coefficients"]]
+```
+
+```{r}
+#make df of lmer output
+# dropping intercept
+male.df <- as_tibble(rbind(offspring.male.shannon.result[2:6,], offspring.male.chao.result[2:6,], offspring.male.proteo.result[2:11,], offspring.male.firmic.result[2:10,]), rownames="Independent variables") %>% 
+  dplyr::rename("P"="Pr(>|t|)") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "z.fe", replacement = "male") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "z.m", replacement = "male") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "pro.abu.RA", replacement = "proteobacteria") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "fir.abu.RA", replacement = "firmicutes") %>% 
+  #search for z.fe or z.m and replace
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P=ifelse(P==0,"<0.001",P)) #%>% 
+  #mutate(P=ifelse(P<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+ # mutate(P=ifelse(P>=0.05 & P<=0.06,str_c(P,"  ."),P))
+
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+male.results <- kable(male.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) Shannon diversity ",1,5) %>%
+  kableExtra::group_rows("(b) Chao diversity ",6,10) %>%
+  kableExtra::group_rows("(c) Proteobacteria RA ",11,20) %>%
+  kableExtra::group_rows("(d) Firmicutes RA ",21,29) %>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+male.results
+```
