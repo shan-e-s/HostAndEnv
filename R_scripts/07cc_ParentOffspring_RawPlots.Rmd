@@ -1,0 +1,117 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Raw plots for parent-offspring analyses
+
+```{r}
+
+```
+
+```{r}
+library(ggplot2)
+```
+
+Coloring points according to nest was hard to interpret because of so many unused levels and hence similar colours being used. the following drops unused levels in parent specific df. Specific to either mother or father.
+```{r}
+nstlng.adult.df$nest
+
+#subset to nests where at least one of adults measured
+nstlng.female.df <- subset(nstlng.adult.df, !is.na(fe.shannon))
+unique(nstlng.female.df$nest)
+nstlng.female.df <- droplevels(nstlng.female.df)
+
+# make male only
+nstlng.male.df <- subset(nstlng.adult.df, !is.na(m.shannon))
+nstlng.male.df <- droplevels(nstlng.male.df)
+```
+
+# Female shannon
+```{r}
+ggplot(nstlng.female.df, aes(fe.shannon, nst.shannon)) +
+  geom_smooth(method = "lm") +
+  geom_point()
+```
+
+```{r}
+ggplot(nstlng.female.df, aes(fe.shannon, nst.shannon, fill = ageBinned)) +
+  geom_smooth(method = "lm") +
+  geom_point()
+
+ggplot(nstlng.female.df, aes(fe.shannon, nst.shannon, fill = ageBinned)) +
+  geom_smooth(method = "lm") +
+  geom_point(aes(color = nest), show.legend = T) +
+  facet_grid(~ageBinned)
+```
+
+
+# Female firmicutes
+
+```{r}
+#ggplot(nstlng.female.df, aes(fe.fir.abu, nst.fir.abu, fill = ageBinned)) +
+  #geom_smooth(method = "lm") +
+  #geom_point()
+```
+
+```{r}
+ggplot(nstlng.female.df, aes(fe.fir.abu.RA, nst.fir.abu/nst.NumberOfReads, fill = ageBinned)) +
+  geom_smooth(method = "lm") +
+  geom_point()
+
+ggplot(nstlng.female.df, aes(fe.fir.abu.RA, nst.fir.abu/nst.NumberOfReads, fill = ageBinned)) +
+  geom_smooth(method = "lm") +
+  geom_point(aes(color = nest), show.legend = TRUE) +
+  facet_grid(~ageBinned)
+```
+```{r}
+ 
+```
+
+# Male shannon(?)
+```{r}
+ggplot(nstlng.male.df, aes(m.shannon, nst.shannon, fill = ageBinned)) +
+  geom_smooth(method = "lm") +
+  geom_point()
+
+ggplot(nstlng.male.df, aes(m.shannon, nst.shannon, fill = ageBinned)) +
+  geom_smooth(method = "lm") +
+  geom_point(aes(color = nest), show.legend = TRUE) +
+  facet_grid(~ageBinned)
+```
+
+# Male proteobacteria
+
+This plot doesnt resemble effect plot but effect plot is using RA values
+```{r}
+#ggplot(nstlng.male.df, aes(m.pro.abu, nst.pro.abu, fill = ageBinned)) +
+  #geom_smooth(method = "lm") +
+ # geom_point()
+```
+
+plotting as proportion reverses direction of both slopes
+* this plot resembles effect_plot
+```{r}
+ggplot(nstlng.male.df, aes(m.pro.abu.RA, nst.pro.abu/nst.NumberOfReads, fill = ageBinned)) +
+  geom_smooth(method = "lm") +
+  geom_point()
+
+ggplot(nstlng.male.df, aes(m.pro.abu.RA, nst.pro.abu/nst.NumberOfReads, fill = ageBinned)) +
+  geom_smooth(method = "lm") +
+  geom_point(aes(color = nest), show.legend = TRUE) +
+  facet_grid(~ageBinned)
+```
+
+# Male firmicutes
+
+D8 slope disagrees with effect_plot which is positive
+```{r}
+ggplot(nstlng.male.df, aes(m.fir.abu.RA, nst.fir.abu/nst.NumberOfReads, fill = ageBinned)) +
+  geom_smooth(method = "lm") +
+  geom_point()
+
+ggplot(nstlng.male.df, aes(m.fir.abu.RA, nst.fir.abu/nst.NumberOfReads, fill = ageBinned)) +
+  geom_smooth(method = "lm") +
+  geom_point(aes(color = nest), show.legend = TRUE) +
+  facet_grid(~ageBinned)
+```
