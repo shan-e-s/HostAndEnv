@@ -1,0 +1,122 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Check model assumptions and data distributions prior to parent offspring analyses.
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+library(DHARMa)
+```
+
+```{r}
+nstlng.adult.df <- readRDS("../Data/ParentOffspringDF.rds")
+```
+
+# 
+```{r}
+hist(nstlng.adult.df$nst.shannon)
+hist(log(nstlng.adult.df$nst.shannon))
+```
+
+
+```{r}
+hist(nstlng.adult.df$nst.chao1)
+hist(log(nstlng.adult.df$nst.chao1))
+```
+
+# Post model checks
+```{r}
+ls()
+
+```
+#female shannon
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = offspring.female.shannon.stdz, n = 250)
+plot(simulationOutput)
+```
+# female chao
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = offspring.female.chao.stdz, n = 250)
+plot(simulationOutput)
+```
+#female proteo
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = offspring.female.proteo.stdz, n = 250)
+plot(simulationOutput)
+```
+Try plotting against individual predictors
+```{r}
+plotResiduals(simulationOutput, offspring.female.proteo.stdz@frame$z.fe.pro.abu.RA)
+plotResiduals(simulationOutput, offspring.female.proteo.stdz@frame$c.ageBinned)
+plotResiduals(simulationOutput, offspring.female.proteo.stdz@frame$c.habitat)
+plotResiduals(simulationOutput, offspring.female.proteo.stdz@frame$z.DistanceToEdge)
+plotResiduals(simulationOutput, offspring.female.proteo.stdz@frame$z.layDateFirst)
+plotResiduals(simulationOutput, offspring.female.proteo.stdz@frame$z.broodSizeWhenSampled)
+```
+
+# female firmicutes
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = offspring.female.firmic.stdz, n = 250)
+plot(simulationOutput)
+```
+Try plotting against individual predictors
+```{r}
+plotResiduals(simulationOutput, offspring.female.firmic.stdz@frame$z.fe.fir.abu.RA)
+plotResiduals(simulationOutput, offspring.female.firmic.stdz@frame$c.ageBinned)
+plotResiduals(simulationOutput, offspring.female.firmic.stdz@frame$c.habitat)
+plotResiduals(simulationOutput, offspring.female.firmic.stdz@frame$z.DistanceToEdge)
+plotResiduals(simulationOutput, offspring.female.firmic.stdz@frame$z.layDateFirst)
+plotResiduals(simulationOutput, offspring.female.firmic.stdz@frame$z.broodSizeWhenSampled)
+```
+
+# male shannon
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = offspring.male.shannon.stdz, n = 250)
+plot(simulationOutput)
+```
+
+Try plotting against individual predictors
+```{r}
+plotResiduals(simulationOutput, offspring.male.shannon.stdz@frame$z.m.shannon)
+plotResiduals(simulationOutput, offspring.male.shannon.stdz@frame$c.ageBinned)
+plotResiduals(simulationOutput, offspring.male.shannon.stdz@frame$c.habitat)
+```
+
+# male chao
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = offspring.male.chao.stdz, n = 250)
+plot(simulationOutput)
+```
+Try plotting against individual predictors
+```{r}
+plotResiduals(simulationOutput, offspring.male.chao.stdz@frame$z.m.chao1)
+plotResiduals(simulationOutput, offspring.male.chao.stdz@frame$c.ageBinned)
+plotResiduals(simulationOutput, offspring.male.chao.stdz@frame$c.habitat)
+```
+
+# male proteobacteria
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = offspring.male.proteo.stdz, n = 250)
+plot(simulationOutput)
+```
+```{r}
+plotResiduals(simulationOutput, offspring.male.proteo.stdz@frame$z..fir.abu.RA)
+plotResiduals(simulationOutput, offspring.male.proteo.stdz@frame$c.ageBinned)
+plotResiduals(simulationOutput, offspring.male.proteo.stdz@frame$c.habitat)
+plotResiduals(simulationOutput, offspring.male.proteo.stdz@frame$z.DistanceToEdge)
+plotResiduals(simulationOutput, offspring.male.proteo.stdz@frame$z.layDateFirst)
+plotResiduals(simulationOutput, offspring.male.proteo.stdz@frame$z.broodSizeWhenSampled)
+```
+
+# Male firmicutes
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = offspring.male.firmic.stdz, n = 250)
+plot(simulationOutput)
+```
+
+
