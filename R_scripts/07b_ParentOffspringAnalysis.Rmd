@@ -78,9 +78,12 @@ summary(arm::standardize(offspring.parents.firmic))
 # Female only
 ### shannon
 
-Drop bird ID as singular fit
+Drop bird Id as singular fit
+
+DHARMa residuals poor
+* tried dropping brood size or lay date but no difference really
 ```{r}
-offspring.female.shannon <- lmer(nst.shannon ~ fe.shannon * ageBinned + ageBinned * habitat+ (1|site/nest), data = nstlng.adult.df)
+offspring.female.shannon <- lmer(nst.shannon ~ fe.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest), data = nstlng.adult.df)
 
 offspring.female.shannon.stdz <- arm::standardize(offspring.female.shannon)
 summary(offspring.female.shannon.stdz)
@@ -88,8 +91,9 @@ summary(offspring.female.shannon.stdz)
 
 ### chao
 Drop bird ID as singular fit
+Residual plots good
 ```{r}
-offspring.female.chao <- lmer(log(nst.chao1) ~ fe.chao1*ageBinned + ageBinned * habitat+ (1|site/nest), data = nstlng.adult.df)
+offspring.female.chao <- lmer(log(nst.chao1) ~ fe.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst +  (1|site/nest), data = nstlng.adult.df)
 
 offspring.female.chao.stdz <- arm::standardize(offspring.female.chao)
 summary(offspring.female.chao.stdz)
@@ -100,19 +104,11 @@ How to control for adult number of reads? Use fraction?
 
 ### Proteobacteria RA
 
-Model nearly unidentifiable even after rescaling
-* OLRE fixes unidentifiable warning but results change alot + (1|BIOM.ID), check for over dispersion
-* try dropping habitat*distance: now model fails to converge
-* try dropping broodSizeWhenSampled*DistanceToEdge: residuals get worse, model still fails to converge
-* try dropping habitat*broodSizeWhenSampled : model still fails to converge
-* added control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)) and this fixed convergence and unidentifiable issue
-* tried to re-add habitat*broodSizeWhenSampled and model failed again
-* re-added broodSizeWhenSampled*DistanceToEdge: reisduals improve model still converges
-* re-added habitat*DistanceToEdge: residuals fine, model converges
+Residual plots good
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.pro.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.female.proteo <- glmer(binomial.response ~  fe.pro.abu.RA*ageBinned + ageBinned*habitat + ageBinned*broodSizeWhenSampled + ageBinned*DistanceToEdge + ageBinned*layDateFirst + broodSizeWhenSampled*DistanceToEdge + habitat*DistanceToEdge +(1|site/nest/bird.ID) , family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df, control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+offspring.female.proteo <- glmer(binomial.response ~  fe.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID) , family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df, control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
 
 offspring.female.proteo.stdz <- arm::standardize(offspring.female.proteo)
   
@@ -121,14 +117,13 @@ summary(offspring.female.proteo.stdz)
 
 ### Firmicutes RA
 
-DHARMa plots show pattern
-* try dropping less important interactions: habitat*distance is not significant and doesnt contain key variables of interest ie age or parent microbiome trait
-* fit improves after dropping habitat*DistanceToEdge
+Residual plots poor
+* tried dropping brood size or lay date but resid much worse
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.fir.abu/nstlng.adult.df$nst.NumberOfReads)
 
 #removed: habitat*DistanceToEdge
-offspring.female.firmic <- glmer(binomial.response ~  fe.fir.abu.RA*ageBinned + ageBinned*habitat + ageBinned*broodSizeWhenSampled + ageBinned*DistanceToEdge + ageBinned*layDateFirst + habitat*broodSizeWhenSampled + broodSizeWhenSampled*DistanceToEdge + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+offspring.female.firmic <- glmer(binomial.response ~  fe.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
 
 offspring.female.firmic.stdz <- arm::standardize(offspring.female.firmic)
   
@@ -140,8 +135,10 @@ summary(offspring.female.firmic.stdz)
 ### shannon
 
 Drop bird.ID due to singular fit
+
+Residuals poor
 ```{r}
-offspring.male.shannon <- lmer(nst.shannon ~ m.shannon*ageBinned + ageBinned*habitat + (1|site/nest), data = nstlng.adult.df)
+offspring.male.shannon <- lmer(nst.shannon ~ m.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst +  (1|site/nest), data = nstlng.adult.df)
 
 offspring.male.shannon.stdz <-  arm::standardize(offspring.male.shannon)
 
@@ -151,12 +148,9 @@ summary(offspring.male.shannon.stdz)
 ### chao
 Drop bird.ID due to singular fit
 
-DHARMa residuals are very bad
-* try dropping age*habitat: residuals worse
-* try dropping age*chao interaction: residuals slightly improve but still very poor
-* havent found satisfactory improvement to residuals
+DHARMa residuals are fine
 ```{r}
-offspring.male.chao <- lmer(log(nst.chao1) ~ m.chao1*ageBinned + ageBinned * habitat + (1|site/nest), data = nstlng.adult.df)
+offspring.male.chao <- lmer(log(nst.chao1) ~ m.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest), data = nstlng.adult.df)
 
 offspring.male.chao.stdz <-  arm::standardize(offspring.male.chao)
 
@@ -167,17 +161,11 @@ summary(offspring.male.chao.stdz)
 How to control for adult number of reads? Use fraction?
 
 ### Proteobacteria RA
-DHARMA plots very poor, 
-* try removing habitat*DistanceToEdge: residuals still very poor
-* try removing broodSizeWhenSampled*DistanceToEdge : resiudals slightly better
-* try removing habitat * brood size: resid slightly better again
-* try removing lay date: no difference to resid, put lay date back in
-* try removing brood size: huge improvement in residuals
-* added habitat*DistanceToEdge back in resid improve again
+DHARMA plots very fine
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.pro.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.male.proteo <- glmer(binomial.response ~  m.pro.abu.RA*ageBinned + ageBinned*habitat + ageBinned*layDateFirst + ageBinned*DistanceToEdge + habitat*DistanceToEdge + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+offspring.male.proteo <- glmer(binomial.response ~  m.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst +  (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
 
 offspring.male.proteo.stdz <- (arm::standardize(offspring.male.proteo))
 summary(offspring.male.proteo.stdz)
@@ -185,16 +173,11 @@ summary(offspring.male.proteo.stdz)
 
 ### Firmicutes RA
 
-DMARMA residuals very poor
-* try removing  broodSizeWhenSampled*DistanceToEdge: residuals even worse
-* try removing habitat*broodSizeWhenSampled: reisduals still terrible
-* try removing ageBinned*broodSizeWhenSampled: still terrible
-* removing + habitat*DistanceToEdge: much improved
-* tried adding ageBinned*broodSizeWhenSampled back in: residuals got much worse
+DMARMA residuals fine
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.fir.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.male.firmic <- glmer(binomial.response ~  m.fir.abu.RA*ageBinned + ageBinned*habitat + ageBinned*DistanceToEdge + ageBinned*layDateFirst + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+offspring.male.firmic <- glmer(binomial.response ~  m.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
 
 offspring.male.firmic.stdz <- arm::standardize(offspring.male.firmic)
 summary(offspring.male.firmic.stdz)

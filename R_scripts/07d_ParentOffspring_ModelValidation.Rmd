@@ -39,6 +39,16 @@ ls()
 simulationOutput <- simulateResiduals(fittedModel = offspring.female.shannon.stdz, n = 250)
 plot(simulationOutput)
 ```
+
+Try plotting against individual predictors
+```{r}
+plotResiduals(simulationOutput, offspring.female.proteo.stdz@frame$z.fe.pro.abu.RA)
+plotResiduals(simulationOutput, offspring.female.proteo.stdz@frame$c.ageBinned)
+plotResiduals(simulationOutput, offspring.female.proteo.stdz@frame$c.habitat)
+plotResiduals(simulationOutput, offspring.female.proteo.stdz@frame$z.DistanceToEdge)
+plotResiduals(simulationOutput, offspring.female.proteo.stdz@frame$z.layDateFirst)
+plotResiduals(simulationOutput, offspring.female.proteo.stdz@frame$z.broodSizeWhenSampled)
+```
 # female chao
 ```{r}
 simulationOutput <- simulateResiduals(fittedModel = offspring.female.chao.stdz, n = 250)
@@ -85,6 +95,8 @@ Try plotting against individual predictors
 plotResiduals(simulationOutput, offspring.male.shannon.stdz@frame$z.m.shannon)
 plotResiduals(simulationOutput, offspring.male.shannon.stdz@frame$c.ageBinned)
 plotResiduals(simulationOutput, offspring.male.shannon.stdz@frame$c.habitat)
+plotResiduals(simulationOutput, offspring.male.shannon.stdz@frame$z.broodSizeWhenSampled)
+plotResiduals(simulationOutput, offspring.male.shannon.stdz@frame$z.layDateFirst)
 ```
 
 # male chao
