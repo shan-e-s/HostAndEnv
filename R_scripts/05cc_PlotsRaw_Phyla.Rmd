@@ -7,7 +7,7 @@ Robustness checks for all birds phyla models
 
 JQ meeting 29 April 2022
 * plot raw data to check effects
-* arcsine square root transofmr + gaussian model as alt to binomial
+* arcsine square root transform + gaussian model as alt to binomial
 * can report original model in paper but mention potential over dispersion and that certain results are less robust and certain results more robust
 
 # set up
@@ -63,11 +63,12 @@ check effects
 * age x distance
 * age x lay date
 
+## Age
 ```{r}
 ggplot(proteobacteria.df, aes(ageBinned, proteo.Proportion)) +
   geom_boxplot()
 ```
-
+## brood size
 ```{r}
 ggplot(proteobacteria.df, aes(broodSizeWhenSampled ,proteo.Proportion)) +
  # geom_smooth() +
@@ -80,6 +81,7 @@ ggplot(subset(proteobacteria.df, broodSizeWhenSampled>1 & broodSizeWhenSampled<7
   geom_point()
 ```
 
+## distance
 ```{r}
 ggplot(proteobacteria.df, aes(DistanceToEdge ,proteo.Proportion)) +
  # geom_smooth() +
@@ -90,18 +92,24 @@ ggplot(subset(proteobacteria.df, DistanceToEdge<50), aes(DistanceToEdge, proteo.
  # geom_smooth() +
   geom_smooth(method="lm") +
   geom_point()
+
 ```
 
+## age x habitat
 ```{r}
 ggplot(proteobacteria.df, aes(ageBinned, proteo.Proportion, fill = habitat)) +
   geom_boxplot()
 ```
-
+## brood size x age
 ```{r}
 ggplot(proteobacteria.df, aes(as.factor(broodSizeWhenSampled), proteo.Proportion, fill = ageBinned)) +
   geom_boxplot() 
-```
 
+ggplot(proteobacteria.df, aes((broodSizeWhenSampled), proteo.Proportion, fill = ageBinned)) +
+  geom_smooth(method="lm") +
+  geom_point()
+```
+## distance x age
 ```{r}
 ggplot((proteobacteria.df), aes(DistanceToEdge, proteo.Proportion, fill = ageBinned)) +
 #  geom_smooth() +
@@ -114,12 +122,11 @@ ggplot(subset(proteobacteria.df, DistanceToEdge<50), aes(DistanceToEdge, proteo.
   geom_smooth(method="lm") +
   geom_point()
 ```
-
+## lay date x age
 ```{r}
-ggplot(proteobacteria.df, aes(layDateFirst, proteo.Proportion, fill = ageBinned, label = nest)) +
+ggplot(proteobacteria.df, aes(layDateFirst, proteo.Proportion, fill = ageBinned)) +
   geom_smooth(method="lm") +
-  geom_point() +
-  geom_label()
+  geom_point() 
 
 # drop large layDateFirst values
 ggplot(subset(proteobacteria.df, layDateFirst<80), aes(layDateFirst, proteo.Proportion, fill = ageBinned)) +
@@ -155,11 +162,14 @@ check effects
 * age x distance
 * age x lay date
 
+
+## age
 ```{r}
 ggplot(firmicutes.df, aes(ageBinned, firm.Proportion)) +
   geom_boxplot()
 ```
 
+## brood size
 ```{r}
 ggplot(firmicutes.df, aes(broodSizeWhenSampled ,firm.Proportion)) +
  # geom_smooth() +
@@ -171,7 +181,7 @@ ggplot(subset(firmicutes.df, broodSizeWhenSampled>1 & broodSizeWhenSampled<7), a
   geom_smooth(method="lm") +
   geom_point()
 ```
-
+## distance
 ```{r}
 ggplot(firmicutes.df, aes(DistanceToEdge ,firm.Proportion)) +
  # geom_smooth() +
@@ -183,17 +193,21 @@ ggplot(subset(firmicutes.df, DistanceToEdge<50), aes(DistanceToEdge, firm.Propor
   geom_smooth(method="lm") +
   geom_point()
 ```
-
+## age x habitat
 ```{r}
 ggplot(firmicutes.df, aes(ageBinned, firm.Proportion, fill = habitat)) +
   geom_boxplot()
 ```
-
+## brood size x age
 ```{r}
 ggplot(firmicutes.df, aes(as.factor(broodSizeWhenSampled), firm.Proportion, fill = ageBinned)) +
   geom_boxplot() 
-```
 
+ggplot(firmicutes.df, aes((broodSizeWhenSampled), firm.Proportion, fill = ageBinned)) +
+  geom_smooth(method = "lm") +
+  geom_point()
+```
+## distance x age
 ```{r}
 ggplot((firmicutes.df), aes(DistanceToEdge, firm.Proportion, fill = ageBinned)) +
 #  geom_smooth() +
@@ -206,7 +220,7 @@ ggplot(subset(firmicutes.df, DistanceToEdge<50), aes(DistanceToEdge, firm.Propor
   geom_smooth(method="lm") +
   geom_point()
 ```
-
+## lay date x age
 ```{r}
 ggplot(firmicutes.df, aes(layDateFirst, firm.Proportion, fill = ageBinned)) +
   geom_smooth(method="lm") +

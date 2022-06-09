@@ -8,12 +8,14 @@ rm(list=ls())
 ```
 
 ```{r}
+#install.packages("sjPlot")
 library(interactions)
 library(jtools)
 library(MuMIn)
 library(lme4)
 library(cowplot)
 library(ggplot2)
+library(sjPlot)
 ```
 
 # Read in objects
@@ -147,6 +149,30 @@ broodSizeXage.firmic.all <- interact_plot(firmicutes.model, pred=z.broodSizeWhen
 
 broodSizeXage.firmic.all
 ```
+### age x brood size, standard mode fits
+Using sjplot
+```{r}
+summary(firmicutes.model)
+
+firmicutes.model@frame$ageBinned <- as.factor(firmicutes.model@frame$ageBinned)
+
+str(firmicutes.model@frame$ageBinned)
+
+plot_model(firmicutes.model, type = "pred", terms = c("z.broodSizeWhenSampled", "ageBinned"))
+
+plot_model(firmicutes.model, type = "int")
+
+#plot_model(firmicutes.model, type = "pred", terms = c("ageBinned", "z.broodSizeWhenSampled"))
+```
+
+Can plot with straight lines by specifying outcome.scale = link
+Note: dropped partial residuals here aswell
+```{r}
+broodSizeXage.proteo.all.notPartial<- interact_plot(proteobacteria.model, pred=z.broodSizeWhenSampled, modx=ageBinned, partial.residuals = FALSE, x.label="Brood Size", y.label="Proteobacteria (relative abundance)", interval =TRUE, int.type = "confidence", legend.main = "Age", modx.labels = c("Day 8", "Day 15", "Adult"), point.size = 0.75, outcome.scale = "link") 
+
+broodSizeXage.proteo.all.notPartial
+```
+
 
 ## Age*Distance
 ```{r}

@@ -52,7 +52,7 @@ ggplot(metadata, aes(ageBinned, chao1, fill = habitat)) +
 ```
 
 ## Distance to edge
-Positive trend robust to dropping teh couple of very large distance samples
+Positive trend robust to dropping the couple of very large distance samples
 ```{r}
 ggplot(metadata, aes(DistanceToEdge, shannon)) +
   geom_point() +
@@ -63,3 +63,23 @@ ggplot(subset(metadata, DistanceToEdge<50), aes(DistanceToEdge, shannon)) +
   geom_smooth(method=lm)
 ```
 
+### Distance x age
+```{r}
+ggplot(metadata, aes(DistanceToEdge, shannon, color = ageBinned)) +
+  geom_point() +
+  geom_smooth(method=lm)
+
+ggplot(subset(metadata, DistanceToEdge<50), aes(DistanceToEdge, shannon, color = ageBinned)) +
+  geom_point() +
+  geom_smooth(method=lm)
+```
+
+```{r}
+ggplot(metadata, aes(DistanceToEdge, chao1, color = ageBinned)) +
+  geom_point() +
+  geom_smooth(method=lm)
+
+ggplot(subset(metadata, DistanceToEdge<50), aes(DistanceToEdge, chao1, color = ageBinned)) +
+  geom_point() +
+  geom_smooth(method=lm)
+```
