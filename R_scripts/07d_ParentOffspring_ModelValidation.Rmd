@@ -6,7 +6,7 @@ output: html_notebook
 Check model assumptions and data distributions prior to parent offspring analyses.
 
 ```{r}
-rm(list=ls())
+#rm(list=ls())
 ```
 
 ```{r}

@@ -93,7 +93,7 @@ summary(offspring.female.shannon.stdz)
 Drop bird ID as singular fit
 Residual plots good
 ```{r}
-offspring.female.chao <- lmer(log(nst.chao1) ~ fe.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst +  (1|site/nest), data = nstlng.adult.df)
+offspring.female.chao <- lmer(log(nst.chao1) ~ fe.chao1 + ageBinned + habitat + broodSizeWhenSampled + layDateFirst +  (1|site/nest), data = nstlng.adult.df)
 
 offspring.female.chao.stdz <- arm::standardize(offspring.female.chao)
 summary(offspring.female.chao.stdz)
@@ -108,7 +108,7 @@ Residual plots good
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.pro.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.female.proteo <- glmer(binomial.response ~  fe.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID) , family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df, control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+offspring.female.proteo <- glmer(binomial.response ~  fe.pro.abu.RA + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID) , family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df, control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
 
 offspring.female.proteo.stdz <- arm::standardize(offspring.female.proteo)
   
@@ -117,13 +117,12 @@ summary(offspring.female.proteo.stdz)
 
 ### Firmicutes RA
 
-Residual plots poor
-* tried dropping brood size or lay date but resid much worse
+Residual plots good
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.fir.abu/nstlng.adult.df$nst.NumberOfReads)
 
 #removed: habitat*DistanceToEdge
-offspring.female.firmic <- glmer(binomial.response ~  fe.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+offspring.female.firmic <- glmer(binomial.response ~  fe.fir.abu.RA + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
 
 offspring.female.firmic.stdz <- arm::standardize(offspring.female.firmic)
   
@@ -148,9 +147,9 @@ summary(offspring.male.shannon.stdz)
 ### chao
 Drop bird.ID due to singular fit
 
-DHARMa residuals are fine
+DHARMa residuals are fine, squiggly lines but no tests significant
 ```{r}
-offspring.male.chao <- lmer(log(nst.chao1) ~ m.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest), data = nstlng.adult.df)
+offspring.male.chao <- lmer(log(nst.chao1) ~ m.chao1 + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest), data = nstlng.adult.df)
 
 offspring.male.chao.stdz <-  arm::standardize(offspring.male.chao)
 
@@ -161,11 +160,11 @@ summary(offspring.male.chao.stdz)
 How to control for adult number of reads? Use fraction?
 
 ### Proteobacteria RA
-DHARMA plots very fine
+DHARMA plots alright
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.pro.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.male.proteo <- glmer(binomial.response ~  m.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst +  (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+offspring.male.proteo <- glmer(binomial.response ~  m.pro.abu.RA + ageBinned + habitat + broodSizeWhenSampled + layDateFirst +  (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
 
 offspring.male.proteo.stdz <- (arm::standardize(offspring.male.proteo))
 summary(offspring.male.proteo.stdz)
@@ -173,11 +172,11 @@ summary(offspring.male.proteo.stdz)
 
 ### Firmicutes RA
 
-DMARMA residuals fine
+DMARMA residuals ok but not great
 ```{r}
 binomial.response <- c(nstlng.adult.df$nst.fir.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.male.firmic <- glmer(binomial.response ~  m.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+offspring.male.firmic <- glmer(binomial.response ~  m.fir.abu.RA + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
 
 offspring.male.firmic.stdz <- arm::standardize(offspring.male.firmic)
 summary(offspring.male.firmic.stdz)
@@ -197,7 +196,7 @@ offspring.female.firmic.result <- summary(arm::standardize(offspring.female.firm
 ```{r}
 #make df of lmer output
 # dropping intercept
-female.df <- as_tibble(rbind(offspring.female.shannon.result[2:6,], offspring.female.chao.result[2:6,], offspring.female.proteo.result[2:14,], offspring.female.firmic.result[2:14,]), rownames="Independent variables") %>% 
+female.df <- as_tibble(rbind(offspring.female.shannon.result[2:6,], offspring.female.chao.result[2:6,], offspring.female.proteo.result[2:6,], offspring.female.firmic.result[2:6,]), rownames="Independent variables") %>% 
   dplyr::rename("P"="Pr(>|t|)") %>% 
   mutate_if(is.character, str_replace_all, pattern = "z.fe", replacement = "female") %>% 
   mutate_if(is.character, str_replace_all, pattern = "z.m", replacement = "male") %>% 
@@ -215,8 +214,8 @@ female.df <- as_tibble(rbind(offspring.female.shannon.result[2:6,], offspring.fe
 female.results <- kable(female.df, format = "html", table.attr = "style = \"color: black;\"") %>%
   kableExtra::group_rows("(a) Shannon diversity ",1,5) %>%
   kableExtra::group_rows("(b) Chao diversity ",6,10) %>%
-  kableExtra::group_rows("(c) Proteobacteria RA ",11,23) %>%
-  kableExtra::group_rows("(d) Firmicutes RA ",24,36) %>%
+  kableExtra::group_rows("(c) Proteobacteria RA ",11,15) %>%
+  kableExtra::group_rows("(d) Firmicutes RA ",16,20) %>%
   kableExtra::kable_styling(full_width = F) #%>%
   #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
 
@@ -235,7 +234,7 @@ offspring.male.firmic.result <- summary(arm::standardize(offspring.male.firmic))
 ```{r}
 #make df of lmer output
 # dropping intercept
-male.df <- as_tibble(rbind(offspring.male.shannon.result[2:6,], offspring.male.chao.result[2:6,], offspring.male.proteo.result[2:11,], offspring.male.firmic.result[2:10,]), rownames="Independent variables") %>% 
+male.df <- as_tibble(rbind(offspring.male.shannon.result[2:6,], offspring.male.chao.result[2:6,], offspring.male.proteo.result[2:6,], offspring.male.firmic.result[2:6,]), rownames="Independent variables") %>% 
   dplyr::rename("P"="Pr(>|t|)") %>% 
   mutate_if(is.character, str_replace_all, pattern = "z.fe", replacement = "male") %>% 
   mutate_if(is.character, str_replace_all, pattern = "z.m", replacement = "male") %>% 
@@ -253,8 +252,8 @@ male.df <- as_tibble(rbind(offspring.male.shannon.result[2:6,], offspring.male.c
 male.results <- kable(male.df, format = "html", table.attr = "style = \"color: black;\"") %>%
   kableExtra::group_rows("(a) Shannon diversity ",1,5) %>%
   kableExtra::group_rows("(b) Chao diversity ",6,10) %>%
-  kableExtra::group_rows("(c) Proteobacteria RA ",11,20) %>%
-  kableExtra::group_rows("(d) Firmicutes RA ",21,29) %>%
+  kableExtra::group_rows("(c) Proteobacteria RA ",11,15) %>%
+  kableExtra::group_rows("(d) Firmicutes RA ",16,20) %>%
   kableExtra::kable_styling(full_width = F) #%>%
   #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
 
