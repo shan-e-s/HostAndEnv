@@ -91,13 +91,29 @@ distance.chao.all<-effect_plot(all.chao.lmm.top, pred=z.DistanceToEdge, x.label=
 
 distance.chao.all
 ```
+## Distance x age, chao
+NOTE: using second top ranked model for plot because this contains the age x distance interaction
+
+Slopes for the age x distance interaction should be negative according to model estimates but slopes in plot are positive
+* is the slope calculated as the slope for distance (0.47) plus the interaction coefficient (-0.46)? Instead of what im expecting distance plus ageBinned1 plus interaction?
+*note: intercept refers to grand mean not reference level mean and the coefficients are main effects rather than marginal effects, so that distance coefficient refers the main effect of distance across age groups. The interaction slopes are therefore relative to an unseen D8 slope and dont disagree with the model outputs.
+```{r}
+all.chao.lmm.top <- top.models2[[2]]
+summary(all.chao.lmm.top)
+
+#all.chao.lmm.top@frame$c.habitat <- ifelse(all.chao.lmm.top@frame$c.habitat<0, "conifer", "deciduous")
+
+distance.chao.age <- interact_plot(all.chao.lmm.top, pred=z.DistanceToEdge, modx=ageBinned, x.label="Distance to edge", y.label="log(Chao)", interval =TRUE, int.type = "confidence", partial.residuals = TRUE, legend.main = "Age", modx.labels = c("Day 8", "Day 15", "Adult"), data = all.chao.lmm.top@frame) #point.color = pnt.color,
+
+distance.chao.age
+```
+
 ## Age, chao
 Age is significant in full averaged model while age*habitat is only included 4th top model
 
 ```{r}
 all.chao.lmm.top <- top.models2[[1]]
 summary(all.chao.lmm.top)
-
 #all.chao.lmm.top@frame$c.habitat <- ifelse(all.chao.lmm.top@frame$c.habitat<0, "conifer", "deciduous")
 
 age.chao.all<-effect_plot(all.chao.lmm.top, pred=ageBinned, x.label="Age", y.label="log(Chao)", interval =TRUE, int.type = "confidence", partial.residuals = TRUE, data = all.chao.lmm.top@frame)
@@ -145,6 +161,13 @@ theme_classic2 <- function(base_size = 12, base_family = ""){
 p1 <- plot_grid(distance.shannon.all+theme_classic2(), distance.chao.all+theme_classic2(), nrow = 1,rel_widths = c(1,1,0.4)) #p4.legend
 p1
 ```
+```{r}
+#p4.legend <- get_legend(broodSizeXage.proteo.all) # from script 05c_
+
+p1.age <- plot_grid(distance.shannon.all+theme_classic2(), distance.chao.age+theme_classic(), nrow = 1,rel_widths = c(1,1.3,0.4)) #p4.legend
+p1.age
+```
+
 
 ```{r}
 ageXhabitat.chao.all+theme_classic()
