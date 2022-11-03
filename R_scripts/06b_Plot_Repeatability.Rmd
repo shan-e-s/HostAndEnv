@@ -10,7 +10,17 @@ Plot D8 alpha diversity against D15 alpha diversity and colour by individual to 
 Wilson 2018: Repeatability can be low because of (a) high within individual variation, or (b) low between individual variation.
 
 ```{r}
+rm(list = ls())
+```
+
+```{r}
 library(cowplot)
+library(tidyverse)
+```
+
+# load in saved repeatability objects
+```{r}
+load("../Data/Repeatability_models.rda")
 ```
 
 # get paired dataframe
