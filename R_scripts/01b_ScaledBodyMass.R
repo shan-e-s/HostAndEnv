@@ -12,6 +12,7 @@
 
 # Recommend to use the: L variable which has the strongest correlation with M on a log-log scale, since this is likely to be the L that best explains thatfraction of mass associated with structural size.
 
+#install.packages("lmodel2")
 library(lmodel2)
 library(dplyr)
 library(microbiome)
