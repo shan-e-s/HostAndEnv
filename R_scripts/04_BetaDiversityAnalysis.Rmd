@@ -180,6 +180,13 @@ Plot dispersions
 plot(dispersion1)
 plot(dispersion4)
 ```
+Add below chunk to test effect of nest for discussion
+```{r}
+check.nest <- adonis2(aitchison.dist.dups ~ ageBinned + habitat + layDateFirst + broodSizeWhenSampled + DistanceToEdge + SequencePlate + nest, by="margin", method="euclidian", data = metadata.scaled)
+
+check.nest
+```
+```
 
 ```{r}
 perms.dups <- with(metadata, how(nperm = 1000, blocks = nest))
