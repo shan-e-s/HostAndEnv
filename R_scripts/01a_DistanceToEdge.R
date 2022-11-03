@@ -78,8 +78,10 @@ dist <- dist2Line(st_coordinates(pointsWgs84.sf)[,1:2],st_coordinates(lineWgs84.
 
 ## FIGURE OUT WHAT UNITS DISTANCE BEING MEASURED IN 
 ## can verify using Ruler tool on Google earth Pro
+## confirmed  units are meters
 
 # create df w/ nest.ID and distance to edge, also need to give nest.ID column correct name
+## note: lat lon give position of nearest coordinate on the line for each nest
 nestbox.edge <- as.data.frame(cbind(as.character(nestboxes$nest.ID), dist)) %>% mutate_at(c("distance", "lon", "lat"),  
                                                                                           funs(as.numeric(as.character(.)))) %>% dplyr::rename(nest = V1, DistanceToEdge = distance)
 

@@ -13,28 +13,21 @@ rm(list=ls())
 ```
 
 
-```{r}
-if (!require("BiocManager", quietly = TRUE))
-    install.packages("BiocManager")
-
-BiocManager::install("microbiome")
-```
-
 ```{r Set-up, message=FALSE, echo=FALSE}
 # libraries
-install.packages("phyloseq", dependencies = T)
+#install.packages("tcltk", dependencies = T)
 library(vegan)  ##note had trouble installing, needed to install gfortran first
 library(tidyverse) #
 library(phyloseq) 
 library(microbiome)
 library(grid)
-# library(gridExtra)
-# library(ggpubr)
+library(tcltk)
+library(gridExtra)
 # library(kableExtra)
 library(compositions)
 # library(ggfortify)
 # library(ggplot2)
-# library(cowplot)
+library(cowplot)
 # 
 # library(arm)
 ```
@@ -43,6 +36,22 @@ library(compositions)
 ```{r Read in data, warning=FALSE, echo=FALSE}
 phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
 metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+```
+
+Rename variable levels
+```{r}
+metadata <- metadata %>%
+     mutate(habitat = recode(habitat, conifer = "Coniferous",
+         deciduous = "Deciduous",
+     )
+)
+
+metadata <- metadata %>%
+     mutate(ageBinned = recode(ageBinned, "1week" = "D8",
+         "2week" = "D15",
+         "adult" = "Adult"
+     )
+)
 ```
 
 Do i need to scale numeric variables?
@@ -81,6 +90,271 @@ PCA
 aitch.pca <- prcomp(aitchison.distance)
 ```
 
+Code from:
+https://huboqiang.cn/2016/03/03/RscatterPlotPCA
+```{r}
+df_out <- as.data.frame(aitch.pca$x)
+df_out$ageBinned <- metadata$ageBinned
+df_out$habitat <- metadata$habitat
+df_out$layDateFirst <- metadata$layDateFirst
+df_out$broodSizeWhenSampled <- metadata$broodSizeWhenSampled
+df_out$nest <- metadata$nest
+
+
+head(df_out)
+```
+
+Calculate the PC loadings for labels
+* took these from different sites and they disagree alot
+```{r}
+# Sum the total variance
+d.mvar <- sum(aitch.pca$sdev^2)
+# Calculate the PC1 and PC2 variance
+PC1.label <- paste("PC1: ", round(sum(aitch.pca$sdev[1]^2)/d.mvar, 3)*100,"%")
+PC2.label <- paste("PC2: ", round(sum(aitch.pca$sdev[2]^2)/d.mvar, 3)*100,"%")
+
+#percentage <- round(aitch.pca$sdev / sum(aitch.pca$sdev) * 100, 2)
+#percentage <- paste( colnames(df_out), "(", paste( as.character(percentage), "%", ")", sep="") )
+
+#screeplot(aitch.pca)
+```
+# PCA plots
+
+## ellipses for just age
+one plot for each age (ellipses each habitat)
+```{r}
+p <- ggplot(df_out,aes(x=PC1,y=PC2, color=ageBinned ))
+p <- p + geom_point() + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
+p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
+                      aes(group = (ageBinned), fill = ageBinned, colour = ageBinned))
+p <- p + scale_color_discrete(name = "Age", labels = c("D8", "D15", "Adult"))
+p <- p + scale_fill_discrete(element_blank(), labels = NULL)
+#p + facet_grid(habitat~.)
+
+p+theme_classic()
+
+p.age <- p
+```
+## reviewer 3 requested change
+Colours for nests and shapes for age
+```{r}
+p <- ggplot(df_out, aes(x=PC1, y=PC2, color=nest))
+p <- p + geom_point(show.legend = F, aes(shape = ageBinned)) + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
+p
+
+p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0, 
+                      aes(group = ageBinned, colour = ageBinned)) #colour = c("red", "blue", "orange"),
+p
+
+#p <- p + scale_color_discrete(name = "Age", labels = c("D8", "D15", "Adult"))
+p <- p + scale_fill_discrete(element_blank(), labels = NULL)
+#p + facet_grid(habitat~.)
+p <- p + guides(colour = "none")
+
+p+theme_classic()
+
+#p.age <- p
+```
+
+## ellipses for just habitat
+```{r}
+p <- ggplot(df_out,aes(x=PC1,y=PC2, color=habitat ))
+p <- p + geom_point() + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
+p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
+                      aes(group = (habitat), fill = habitat, colour = habitat))
+p <- p + scale_color_discrete(name = "Habitat", labels = c("Conifer", "Deciduous"))
+p <- p + scale_fill_discrete(element_blank(), labels = NULL)
+#p + facet_grid(habitat~.)
+
+p+theme_classic()
+
+p.habitat <- p
+```
+
+## Combine age and habitat plots
+```{r}
+theme_classic2 <- function(base_size = 12, base_family = ""){
+  theme_bw(base_size = base_size, base_family = base_family) %+replace%
+    theme(
+      legend.position = "none",
+      panel.border     = element_blank(),
+      axis.line        = element_line(colour = "black"),
+      panel.grid.major=element_line(colour="grey", size=0.5, 3),
+      panel.grid.major.x = element_blank(),
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      panel.grid.minor.y = element_blank(),
+      strip.background = element_blank(),
+      legend.key       = element_blank(),
+      plot.title = element_text(hjust = 0.5, face = "bold") # centre and bold title
+    )
+}
+```
+
+```{r}
+p3 <- plot_grid(p.age+theme_classic()+labs(title=""), p.habitat+theme_classic()+labs(title=""), ncol=1, labels = c("A", "B"))
+p3
+```
+save high res image
+```{r}
+png("pca_out.png", width = 561, height = 476, units='mm', res = 300)
+p3
+dev.off()
+```
+
+# Dispersion plots, base r
+
+```{r}
+dispersion <- betadisper(aitchison.distance, metadata[,"ageBinned"])
+plot(dispersion, main = "", sub = "")
+```
+
+```{r}
+dispersion <- betadisper(aitchison.distance, metadata[,"habitat"])
+plot(dispersion, main = "", sub = "")
+```
+
+## Dispersion, ggplot age
+
+```{r}
+dispersion <- betadisper(aitchison.distance, metadata[,"ageBinned"])
+```
+
+code from https://chrischizinski.github.io/rstats/adonis/ 
+```{r}
+# extract the centroids and the site points in multivariate space.  
+centroids<-data.frame(grps=rownames(dispersion$centroids),data.frame(dispersion$centroids))
+vectors<-data.frame(group=dispersion$group,data.frame(dispersion$vectors))
+
+# to create the lines from the centroids to each point we will put it in a format that ggplot can handle
+seg.data<-cbind(vectors[,1:3],centroids[rep(1:nrow(centroids),as.data.frame(table(vectors$group))$Freq),2:3])
+names(seg.data)<-c("group","v.PCoA1","v.PCoA2","PCoA1","PCoA2")
+
+# create the convex hulls of the outermost points
+grp1.hull<-seg.data[seg.data$group=="D8",1:3][chull(seg.data[seg.data$group=="D8",2:3]),]
+grp2.hull<-seg.data[seg.data$group=="D15",1:3][chull(seg.data[seg.data$group=="D15",2:3]),]
+grp3.hull<-seg.data[seg.data$group=="Adult",1:3][chull(seg.data[seg.data$group=="Adult",2:3]),]
+all.hull<-rbind(grp1.hull,grp2.hull,grp3.hull)
+
+```
+
+
+```{r}
+age.dispersion <- ggplot() + 
+  geom_polygon(data=all.hull,aes(x=v.PCoA1,y=v.PCoA2, colour = group),alpha=0) +
+  geom_segment(data=seg.data,aes(x=v.PCoA1,xend=PCoA1,y=v.PCoA2,yend=PCoA2),alpha=0.30) + 
+  geom_point(data=centroids[,1:3], aes(x=PCoA1,y=PCoA2,colour=grps),size=2) + 
+ # geom_label(aes(x =-0.3701276, y=0.6068285, label = "D8")) +
+  #geom_label(aes(x =0.8799281, y=0.4656689, label = "D15")) +
+  #geom_label(aes(x =0.4046661, y=-1.3055476, label = "Adult")) +
+  #geom_point(data=seg.data, aes(x=v.PCoA1,y=v.PCoA2,colour=group),size=2) +
+  labs(title="",x="",y="") +
+  theme_classic() +
+  scale_color_discrete(name = "Age")
+
+age.dispersion
+```
+
+## Dispersion, ggplot habitat
+
+```{r}
+dispersion <- betadisper(aitchison.distance, metadata[,"habitat"])
+```
+
+```{r}
+# extract the centroids and the site points in multivariate space.  
+centroids<-data.frame(grps=rownames(dispersion$centroids),data.frame(dispersion$centroids))
+vectors<-data.frame(group=dispersion$group,data.frame(dispersion$vectors))
+
+# to create the lines from the centroids to each point we will put it in a format that ggplot can handle
+seg.data<-cbind(vectors[,1:3],centroids[rep(1:nrow(centroids),as.data.frame(table(vectors$group))$Freq),2:3])
+names(seg.data)<-c("group","v.PCoA1","v.PCoA2","PCoA1","PCoA2")
+
+# create the convex hulls of the outermost points
+grp1.hull<-seg.data[seg.data$group=="Coniferous",1:3][chull(seg.data[seg.data$group=="Coniferous",2:3]),]
+grp2.hull<-seg.data[seg.data$group=="Deciduous",1:3][chull(seg.data[seg.data$group=="Deciduous",2:3]),]
+all.hull<-rbind(grp1.hull,grp2.hull)
+
+```
+
+```{r}
+habitat.dispersion <- ggplot() + 
+  geom_polygon(data=all.hull,aes(x=v.PCoA1,y=v.PCoA2, colour = group),alpha=0) +
+  geom_segment(data=seg.data,aes(x=v.PCoA1,xend=PCoA1,y=v.PCoA2,yend=PCoA2),alpha=0.30) + 
+  geom_point(data=centroids[,1:3], aes(x=PCoA1,y=PCoA2,colour=grps),size=2) + 
+  #geom_label(aes(x =-0.02783881, y=-0.3417306, label = "Coniferous")) +
+  #geom_label(aes(x =0.51478625, y=0.2675555, label = "Deciduous")) +
+  #geom_point(data=seg.data, aes(x=v.PCoA1,y=v.PCoA2,colour=group),size=2) +
+  labs(title="",x="",y="") +
+  theme_classic() +
+  scale_color_discrete(name = "Habitat")
+
+habitat.dispersion
+```
+## Dispersion, ggplot age x habitat
+
+```{r}
+agexHabitat <- paste(metadata$ageBinned, metadata$habitat, sep = "-")
+dispersion <- betadisper(aitchison.distance, agexHabitat)
+```
+
+```{r}
+# extract the centroids and the site points in multivariate space.  
+centroids<-data.frame(grps=rownames(dispersion$centroids),data.frame(dispersion$centroids))
+vectors<-data.frame(group=dispersion$group,data.frame(dispersion$vectors))
+
+# to create the lines from the centroids to each point we will put it in a format that ggplot can handle
+seg.data<-cbind(vectors[,1:3],centroids[rep(1:nrow(centroids),as.data.frame(table(vectors$group))$Freq),2:3])
+names(seg.data)<-c("group","v.PCoA1","v.PCoA2","PCoA1","PCoA2")
+
+# create the convex hulls of the outermost points
+grp1.hull<-seg.data[seg.data$group=="D8-Coniferous",1:3][chull(seg.data[seg.data$group=="D8-Coniferous",2:3]),]
+grp2.hull<-seg.data[seg.data$group=="D15-Coniferous",1:3][chull(seg.data[seg.data$group=="D15-Coniferous",2:3]),]
+grp3.hull<-seg.data[seg.data$group=="Adult-Coniferous",1:3][chull(seg.data[seg.data$group=="Adult-Coniferous",2:3]),]
+grp4.hull<-seg.data[seg.data$group=="D8-Deciduous",1:3][chull(seg.data[seg.data$group=="D8-Deciduous",2:3]),]
+grp5.hull<-seg.data[seg.data$group=="D15-Deciduous",1:3][chull(seg.data[seg.data$group=="D15-Deciduous",2:3]),]
+grp6.hull<-seg.data[seg.data$group=="Adult-Deciduous",1:3][chull(seg.data[seg.data$group=="Adult-Deciduous",2:3]),]
+all.hull<-rbind(grp1.hull, grp2.hull, grp3.hull, grp4.hull, grp5.hull, grp6.hull)
+
+```
+
+```{r}
+ageXhabitat.dispersion <- ggplot() + 
+  geom_polygon(data=all.hull,aes(x=v.PCoA1,y=v.PCoA2, colour = group),alpha=0) +
+  geom_segment(data=seg.data,aes(x=v.PCoA1,xend=PCoA1,y=v.PCoA2,yend=PCoA2),alpha=0.30) + 
+  geom_point(data=centroids[,1:3], aes(x=PCoA1,y=PCoA2,colour=grps),size=2) + 
+  #geom_label(aes(x =-0.02783881, y=-0.3417306, label = "Coniferous")) +
+  #geom_label(aes(x =0.51478625, y=0.2675555, label = "Deciduous")) +
+  #geom_point(data=seg.data, aes(x=v.PCoA1,y=v.PCoA2,colour=group),size=2) +
+  labs(title="",x="",y="") +
+  theme_classic() +
+  scale_color_discrete(name = "Age-Habitat")
+
+ageXhabitat.dispersion
+```
+
+## Arrange plots
+
+```{r}
+dispersion.plot <- cowplot::plot_grid(age.dispersion, habitat.dispersion, ageXhabitat.dispersion, nrow = 3, labels = c("A", "B", "C"))
+dispersion.plot
+ggsave("dispersionPlots.tiff", plot = dispersion.plot, device = "tiff", path = "../R_figures", width = 15, height = 20, units = "cm", dpi = 175)
+```
+# PCA + dispersion plots
+```{r}
+
+p4 <- plot_grid(plot_grid(p.age+theme_classic()+labs(title="") + theme(legend.position = "none"),
+                          p.habitat+theme_classic()+labs(title="")+ theme(legend.position = "none"), 
+                          ncol=1, labels = c("A", "C")), 
+                plot_grid(age.dispersion, habitat.dispersion, ncol = 1, labels = c("B", "D")))
+
+p4
+
+ggsave("Fig3_PCA_and_dispersionPlots.tiff", plot = p4, device = "tiff", path = "../R_figures", width = 20, height = 15, units = "cm", dpi = 175)
+```
+
+########################################################################
 # Surface plot
 ```{r}
 surf <- ordisurf(aitch.pca~broodSizeWhenSampled, data = metadata, main="", col="red")
@@ -151,7 +425,9 @@ print(p)
 
 # ggordiplot
 ```{r}
-#library(devtools)
+#
+#install.packages("devtools")
+library(devtools)
 #install_github("jfq3/ggordiplots")
 library(ggordiplots)
 ```

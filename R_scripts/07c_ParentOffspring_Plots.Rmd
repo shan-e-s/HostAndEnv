@@ -1,0 +1,94 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Plots for parent offspring analysis
+
+Do i trust jtools?
+
+```{r}
+library(jtools)
+library(interactions)
+```
+
+# both either analysis
+```{r}
+interact_plot(offspring.parents.shannon.stdz, pred=z.both.either.shannon , modx=both.either.char, partial.residuals = TRUE, x.label="Shannon (parents)", y.label="Nestling Shannon", interval =TRUE, int.type = "confidence", jitter = 0, point.size = 0.75, outcome.scale = "link", legend.main = "Which parent", modx.labels = c("both", "fe", "m"), data = offspring.parents.shannon.stdz@frame) + theme_classic()
+```
+
+
+# model plots
+
+# Female shannon
+```{r}
+offspring.fe.plot <- effect_plot(offspring.female.shannon.stdz, pred=z.fe.shannon, partial.residuals = TRUE, x.label="Shannon (mother)", y.label="Nestling Shannon", interval =TRUE, int.type = "confidence", point.size = 0.75, outcome.scale = "link") + theme_classic()
+
+offspring.fe.plot
+
+interact_plot(offspring.female.shannon.stdz, pred=z.fe.shannon, modx=c.ageBinned, partial.residuals = TRUE, x.label="Shannon (mother)", y.label="Nestling Shannon", interval =TRUE, int.type = "confidence", jitter = 0, point.size = 0.75, outcome.scale = "link", legend.main = "Age", modx.labels = c("Day 8", "Day 15")) + theme_classic()
+```
+
+```{r}
+ggsave("OffspringMother_shannon", plot = offspring.fe.plot, device = "tiff", path = "../R_figures", width = 14, height = 7, units = "cm", dpi = 200)
+```
+
+##############
+#### check
+are there truly 50-something nests represented here?
+* No, there are 24 females and 27 males sampled.
+* i was getting 5x nests from the model output, that was number of unique nestlings, while there were 7x observations with some nestlings sampled twice.
+* 21 nests represented in female models
+* 22 levels in male models/plots , why 5 males dropped from analysis? No corresponding nestling measures?
+
+```{r}
+effect_plot(offspring.female.shannon.stdz, pred=z.fe.shannon, partial.residuals = TRUE, x.label="Shannon (mother)", y.label="Nestling Shannon", interval =TRUE, int.type = "confidence", point.size = 0.75, outcome.scale = "link", aes(label = nest)) +
+  geom_label()
+
+(unique(offspring.female.shannon.stdz@frame$nest))
+(unique(offspring.male.shannon.stdz@frame$nest))
+
+table(nstlng.adult.df$nest, nstlng.adult.df$fe.ID)
+
+nrow(offspring.female.chao@frame)
+```
+
+why are shannon(mother) values clustered vertically?
+* is this a rounding thing?
+```{r}
+offspring.female.shannon.stdz@frame$z.fe.shannon
+
+```
+
+##############
+# Female chao
+# Female Proteobacteria
+# Female Firmicutes
+```{r}
+interact_plot(offspring.female.firmic.stdz, pred=z.fe.fir.abu.RA , modx=c.ageBinned, partial.residuals = TRUE, x.label="Firmicutes (Mother)", y.label="Nestling Firmicutes", interval =TRUE, int.type = "confidence", point.size = 0.75, outcome.scale = "link", legend.main = "Age", modx.labels = c("Day 8", "Day 15"))+ theme_classic()
+
+```
+
+# Male shannon
+```{r}
+effect_plot(offspring.male.shannon.stdz, pred=z.m.shannon, partial.residuals = TRUE, x.label="Shannon (father)", y.label="Nestling Shannon", interval =TRUE, int.type = "confidence", point.size = 0.75, outcome.scale = "link") + theme_classic()
+
+interact_plot(offspring.male.shannon.stdz, pred=z.m.shannon, modx=c.ageBinned, partial.residuals = TRUE, x.label="Shannon (father)", y.label="Nestling Shannon", interval =TRUE, int.type = "confidence", point.size = 0.75, outcome.scale = "link", legend.main = "Age", modx.labels = c("Day 8", "Day 15"))+ theme_classic()
+```
+# Male chao
+
+# Male Proteobacteria
+```{r}
+interact_plot(offspring.male.proteo.stdz, pred=z.m.pro.abu.RA , modx=c.ageBinned, partial.residuals = TRUE, x.label="Proteobacteria (father)", y.label="Nestling Proteobacteria", interval =TRUE, int.type = "confidence", point.size = 0.75, outcome.scale = "link", legend.main = "Age", modx.labels = c("Day 8", "Day 15"))+ theme_classic()
+
+```
+
+# Male Firmicutes
+
+```{r}
+interact_plot(offspring.male.firmic.stdz, pred=z.m.fir.abu.RA , modx=c.ageBinned, partial.residuals = TRUE, x.label="Firmicutes (father)", y.label="Nestling Firmicutes", interval =TRUE, int.type = "confidence", point.size = 0.75, outcome.scale = "link", legend.main = "Age", modx.labels = c("Day 8", "Day 15"))+ theme_classic()
+
+```
+
+
+

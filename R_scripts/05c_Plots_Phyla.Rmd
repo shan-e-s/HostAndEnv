@@ -8,12 +8,14 @@ rm(list=ls())
 ```
 
 ```{r}
+#install.packages("sjPlot")
 library(interactions)
 library(jtools)
 library(MuMIn)
 library(lme4)
 library(cowplot)
 library(ggplot2)
+library(sjPlot)
 ```
 
 # Read in objects
@@ -103,6 +105,18 @@ ageXhabitat.firmic.all<-cat_plot(firmicutes.model, pred=ageBinned, modx=c.habita
 
 ageXhabitat.firmic.all
 ```
+###################################################
+Re-read in these models because ifelse statement upstream, was upsetting the following plot codes
+```{r}
+binomial.response <- cbind(proteobacteria.df$Abundance/proteobacteria.df$NumberOfReads)
+proteobacteria.model <- get.models(model.set.proteo, subset = 1)[[1]]
+
+binomial.response <- cbind(firmicutes.df$Abundance/firmicutes.df$NumberOfReads)
+firmicutes.model <- get.models(model.set.firmicutes, subset = 1)[[1]]
+
+
+```
+###################################################
 
 ## Distance
 ```{r}
@@ -147,6 +161,30 @@ broodSizeXage.firmic.all <- interact_plot(firmicutes.model, pred=z.broodSizeWhen
 
 broodSizeXage.firmic.all
 ```
+### age x brood size, standard mode fits
+Using sjplot
+```{r}
+summary(firmicutes.model)
+
+firmicutes.model@frame$ageBinned <- as.factor(firmicutes.model@frame$ageBinned)
+
+str(firmicutes.model@frame$ageBinned)
+
+plot_model(firmicutes.model, type = "pred", terms = c("z.broodSizeWhenSampled", "ageBinned"))
+
+plot_model(firmicutes.model, type = "int")
+
+#plot_model(firmicutes.model, type = "pred", terms = c("ageBinned", "z.broodSizeWhenSampled"))
+```
+
+Can plot with straight lines by specifying outcome.scale = link
+Note: dropped partial residuals here aswell
+```{r}
+broodSizeXage.proteo.all.notPartial<- interact_plot(proteobacteria.model, pred=z.broodSizeWhenSampled, modx=ageBinned, partial.residuals = FALSE, x.label="Brood Size", y.label="Proteobacteria (relative abundance)", interval =TRUE, int.type = "confidence", legend.main = "Age", modx.labels = c("Day 8", "Day 15", "Adult"), point.size = 0.75, outcome.scale = "link") 
+
+broodSizeXage.proteo.all.notPartial
+```
+
 
 ## Age*Distance
 ```{r}
@@ -182,7 +220,7 @@ layDateXage.firmic.all
 top.adult.proteo <- top.models.pro.adult[[1]]
 #top.adult.proteo@frame$z.layDateFirst <- ifelse(top.adult.proteo@frame$c.ageDays>0,"Juvenile", "Mature")
 
-layDate.proteo.adult<-effect_plot(top.adult.proteo, pred=z.layDateFirst, x.label="Lay date", y.label="Proteobacteria (relative abundance)", interval =TRUE, int.type = "confidence", partial.residuals = TRUE, jitter = 0.01, point.alpha = 0.2, point.size = 0.75) +ylim(0,1)
+layDate.proteo.adult<-effect_plot(top.adult.proteo, pred=z.layDateFirst, x.label="Lay date", y.label="Proteobacteria (relative abundance)", interval =TRUE, int.type = "confidence", partial.residuals = TRUE, jitter = 0.01, point.alpha = 0.5, point.size = 0.75) +ylim(0,1)
 
 layDate.proteo.adult
 ```
@@ -192,7 +230,7 @@ Automatically making y axis between 0, 0.2. I will force to 0,1 to make more com
 #top.adult.proteo <- get.models(model.set.proteo.adult, subset = delta<2)
 top.adult.firmic<- top.models.fir.adult[[2]] ## NOTE using 2nd model which contains lay date
 
-layDate.firmic.adult<-effect_plot(top.adult.firmic, pred=z.layDateFirst, x.label="Lay date", y.label="Firmicutes (relative abundance)", interval =TRUE, int.type = "confidence", partial.residuals = TRUE, jitter = 0.01, point.alpha = 0.2, point.size = 0.75) + ylim(0,1)
+layDate.firmic.adult<-effect_plot(top.adult.firmic, pred=z.layDateFirst, x.label="Lay date", y.label="Firmicutes (relative abundance)", interval =TRUE, int.type = "confidence", partial.residuals = TRUE, jitter = 0.01, point.alpha = 0.5, point.size = 0.75) + ylim(0,1)
 
 layDate.firmic.adult
 ```
@@ -221,27 +259,37 @@ theme_classic2 <- function(base_size = 12, base_family = ""){
 ```
 
 ```{r}
-p3 <- plot_grid(ageXhabitat.proteo.all+theme_classic2()+ylab(NULL)+labs(title="Proteobacteria"), ageXhabitat.firmic.all+theme_classic2()+ylab(NULL)+labs(title="Firmicutes"), ncol=2, labels = c("A", "B"))
+p3 <- cowplot::plot_grid(
+  ageXhabitat.proteo.all+theme_classic2()+ylab(NULL)+labs(title="Proteobacteria"),
+  ageXhabitat.firmic.all+theme_classic2()+ylab(NULL)+labs(title="Firmicutes"),
+  ncol=2, labels = c("A", "B"))
 
-p4 <- plot_grid(broodSizeXage.proteo.all+theme_classic2()+ylab(NULL), broodSizeXage.firmic.all+theme_classic2()+ylab(NULL), distanceXage.proteo.all+theme_classic2()+ylab(NULL), distanceXage.firmic.all+theme_classic2()+ylab(NULL), layDatexage.proteo.all+theme_classic2()+ylab(NULL), layDateXage.firmic.all+theme_classic2()+ylab(NULL), ncol=2, labels = c("C", "D", "E", "F", "G", "H"), label_x = 0, label_y = 1.2)
+p4 <- cowplot::plot_grid(broodSizeXage.proteo.all+theme_classic2()+ylab(NULL), broodSizeXage.firmic.all+theme_classic2()+ylab(NULL), distanceXage.proteo.all+theme_classic2()+ylab(NULL), distanceXage.firmic.all+theme_classic2()+ylab(NULL), layDatexage.proteo.all+theme_classic2()+ylab(NULL), layDateXage.firmic.all+theme_classic2()+ylab(NULL), ncol=2, labels = c("C", "D", "E", "F", "G", "H"), label_x = 0, label_y = 1.2)
 
 # get common legend of all interaction plots
 p3.legend <- get_legend(ageXhabitat.proteo.all)
 p4.legend <- get_legend(broodSizeXage.proteo.all)
 
-p3.grid <- plot_grid(p3, p3.legend, rel_widths = c(3, .5))
-p4.grid <- plot_grid(p4, p4.legend, rel_widths = c(3, .5))
+p3.grid <- cowplot::plot_grid(p3, p3.legend, rel_widths = c(3, .5))
+p4.grid <- cowplot::plot_grid(p4, p4.legend, rel_widths = c(3, .5))
 
-p5 <- plot_grid(p3.grid, p4.grid, nrow = 2,  rel_heights = c(1,3))
+p5 <- cowplot::plot_grid(p3.grid, p4.grid, nrow = 2,  rel_heights = c(1,3))
 p5
 ```
 
 ```{r}
-p1 <- plot_grid(layDate.proteo.adult+theme_classic2()+ylab(NULL)+labs(title="Proteobacteria"), layDate.firmic.adult+theme_classic2()+ylab(NULL)+labs(title="Firmicutes"), labels = c("A", "B")) 
+ggsave("Fig4_RA_allBirds_combined.tiff", plot = p5, device = "tiff", path = "../R_figures", width = 20, height = 20, units = "cm", dpi = 200)
+```
+
+```{r}
+p1 <- cowplot::plot_grid(layDate.proteo.adult+theme_classic2()+ylab("Relative abundance")+labs(title="Proteobacteria"), layDate.firmic.adult+theme_classic2()+ylab(NULL)+labs(title="Firmicutes"), labels = c("A", "B")) 
 
 p1
 ```
 
+```{r}
+ggsave("Fig5_RA_adults_layDate.tiff", plot = p1, device = "tiff", path = "../R_figures", width = 16, height = 8, units = "cm", dpi = 150)
+```
 
 # Plot model averaged models
 
@@ -252,3 +300,62 @@ Error: $ operator is invalid for atomic vectorsxs
 # interact_plot(model.avg.proteobacteria.adult, pred=z.layDateFirst, modx=c.Sex, interval =TRUE, int.type = "confidence", x.label="Lay date", y.label="Firmicutes (relative abundance)", legend.main = "Sex" , data = top.adult.proteo@frame)
 ```
 
+# Plots for HNB Oxford
+
+```{r}
+ageXhabitat.only <- cowplot::plot_grid(
+  ageXhabitat.proteo.all+theme_classic2()+ylab(NULL)+labs(title="Proteobacteria"),
+  ageXhabitat.firmic.all+theme_classic2()+ylab(NULL)+labs(title="Firmicutes"),
+  ncol=2)
+
+#ageXhabitat.only.grid <- cowplot::plot_grid(ageXhabitat.only, p3.legend, rel_widths = c(3, .5))
+ageXhabitat.only.grid <- cowplot::plot_grid(p3.legend, ageXhabitat.only, nrow = 2, rel_heights = c(1,5))
+
+ageXhabitat.only.grid
+
+ggsave("hnb_ageXhabitat_RA.tiff", plot = ageXhabitat.only.grid, device = "tiff", path = "../R_figures/HNB", width = 16, height = 12, units = "cm", dpi = 150)
+```
+
+
+```{r}
+distancexage.only <- cowplot::plot_grid(
+  distanceXage.proteo.all+theme_classic2()+ylab(NULL)+labs(title="Proteobacteria"),
+  distanceXage.firmic.all+theme_classic2()+ylab(NULL)+labs(title="Firmicutes"),
+  ncol=2)
+
+#distancexage.only.grid <- cowplot::plot_grid(distancexage.only, p4.legend, rel_widths = c(3, .5))
+#distancexage.only.grid <- cowplot::plot_grid(distancexage.only, p4.legend, nrow = 2, rel_heights = c(3, 1))
+
+distancexage.only.grid <- cowplot::plot_grid(p4.legend, distancexage.only, nrow = 2, rel_heights = c(1,4))
+
+distancexage.only.grid
+
+ggsave("hnb_distanceXage_RA.tiff", plot = distancexage.only.grid, device = "tiff", path = "../R_figures/HNB", width = 22, height = 14, units = "cm", dpi = 150)
+```
+
+```{r}
+broodSizeXage.only <- cowplot::plot_grid(
+  broodSizeXage.proteo.all+theme_classic2()+ylab(NULL)+labs(title="Proteobacteria"),
+  broodSizeXage.firmic.all+theme_classic2()+ylab(NULL)+labs(title="Firmicutes"),
+  ncol=2)
+
+broodSizeXage.only.grid <- cowplot::plot_grid(p4.legend, broodSizeXage.only, nrow = 2, rel_heights = c(1, 4))
+
+broodSizeXage.only.grid
+
+ggsave("hnb_broodXage_RA.tiff", plot = broodSizeXage.only.grid, device = "tiff", path = "../R_figures/HNB", width = 20, height = 14, units = "cm", dpi = 150)
+```
+
+```{r}
+layDateXage.only <- cowplot::plot_grid(
+  layDatexage.proteo.all+theme_classic2()+ylab(NULL)+labs(title="Proteobacteria"),
+  layDateXage.firmic.all+theme_classic2()+ylab(NULL)+labs(title="Firmicutes"),
+  ncol=2)
+
+#layDateXage.only.grid <- cowplot::plot_grid(layDateXage.only, p4.legend, rel_widths = c(3, .5))
+layDateXage.only.grid <- cowplot::plot_grid(p4.legend, layDateXage.only, nrow = 2, rel_heights = c(1, 4))
+
+layDateXage.only.grid
+
+ggsave("hnb_laydateXage_RA.tiff", plot = layDateXage.only.grid, device = "tiff", path = "../R_figures/HNB", width = 20, height = 14, units = "cm", dpi = 150)
+```

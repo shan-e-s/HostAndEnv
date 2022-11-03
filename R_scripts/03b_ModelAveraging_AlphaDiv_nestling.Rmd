@@ -26,9 +26,9 @@ metadata <- meta(phylo.spring) # doesnt maintain Date data-type
 ```
 
 
-Make adults metadata
+Make nestlings metadata
 ```{r}
-# # subset to adults
+# # subset out adults
 phylo.nestlings <- subset_samples(phylo.spring, ageBinned!="adult")
 nestling.metadata <- meta(phylo.nestlings@sam_data)
 

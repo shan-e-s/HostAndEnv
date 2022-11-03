@@ -3,8 +3,488 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-Plot D8 alpha diversity against D15 alpha diversity and colourby individual to determine whether low repeatability is driven by low between or high within variability.
+Make repeatability plot
+
+Plot D8 alpha diversity against D15 alpha diversity and colour by individual to determine whether low repeatability is driven by low between or high within variability.
 
 Wilson 2018: Repeatability can be low because of (a) high within individual variation, or (b) low between individual variation.
 
+```{r}
+rm(list = ls())
+```
+
+```{r}
+library(cowplot)
+library(tidyverse)
+```
+
+# load in saved repeatability objects
+```{r}
+load("../Data/Repeatability_models.rda")
+```
+
 # get paired dataframe
+
+```{r Extract paired sample data, echo=FALSE}
+indiv.table <- table(nestling.metadata$bird.ID)
+paired.table <- subset(indiv.table,indiv.table>1)
+paired.IDs <- rownames(paired.table)
+
+#paired.D8.shannon <- metadata[(metadata$bird.ID %in% paired.IDs) && (metadata$ageBinned=="1week"),"shannon"]
+
+# subset df instead
+paired.df <- subset(nestling.metadata, bird.ID %in% paired.IDs & (ageBinned=="1week"|ageBinned=="2week"))
+
+# remove samples >2
+#which(indiv.table>2) #CB60C=3, CB6NA, KB922B=3, KB924B=3, KB61D
+remove.paired <- c("CB60-C-D9.S22", "CB6-16-VZ72614.S28", "KB61D-D12.S15", "KB916C-D9.S81","KB922B-D10.S84", "KB924-B-9-201.S89", "CB6-16-VZ72616.S29","CB6-D16-VZ72615.S57","CB6-D16-VZ72617.S58") 
+#remove.paired <- c()
+paired.df <- subset(paired.df, !BIOM.ID %in% remove.paired)
+
+#indiv.table <- table(paired.df$bird.ID)
+#which(indiv.table>2)
+
+# subset paired samples and rename columns
+paired.d8 <- subset(paired.df,ageBinned=="1week")
+paired.d15 <- subset(paired.df,ageBinned=="2week")
+```
+
+## Df creation
+
+```{r}
+paired.matched <- merge(paired.d8[,c("BIOM.ID","ageBinned","nest","shannon","chao1","bird.ID","habitat", "ageDays", "Tarsus", "Weight", "wing", "broodSizeWhenSampled", "broodSizeMax", "Survive", "scaled.mass.chick", "site", "SequencePlate", "layDateFirst", "clutchSize")], paired.d15[,c("BIOM.ID","ageBinned","shannon","chao1","bird.ID","ageDays", "Tarsus", "Weight", "wing", "broodSizeWhenSampled", "scaled.mass.chick","clutchSize","SequencePlate", "DistanceToEdge")], by = "bird.ID")
+# Tarsus and wing not measured for D8's?
+```
+
+Create variable: age difference in days between paired samples.
+```{r}
+paired.matched$ageDiff <- as.numeric(as.character(paired.matched$ageDays.y))-as.numeric(as.character(paired.matched$ageDays.x))
+
+```
+
+Create centred and scaled df. 
+* Already done in 06_Repeatability script
+
+```{r}
+#dput(colnames(paired.matched))
+# numeric.predictors <- c("shannon.x","shannon.y","chao1.x","chao1.y","Tarsus.x", "Weight.x", "wing.x", "broodSizeWhenSampled.x", "broodSizeMax", "scaled.mass.chick.x", "layDateFirst", "clutchSize.x", "Tarsus.y", "wing.y", "broodSizeWhenSampled.y", "scaled.mass.chick.y", "clutchSize.y", "DistanceToEdge","ageDiff")
+# paired.matched.scaled <- paired.matched
+# paired.matched.scaled[,numeric.predictors] <- scale(paired.matched[,numeric.predictors], scale = TRUE, center = TRUE)
+
+```
+
+```{r}
+table(paired.df$ageBinned, paired.df$habitat)
+```
+
+# add RA info to paired.df
+```{r}
+paired.df <- merge(paired.df, proteobacteria.df[,c("BIOM.ID","Abundance")]) %>%
+  rename("Proteobacteria.Abundance" = "Abundance")
+
+paired.df <- merge(paired.df, firmicutes.df[,c("BIOM.ID","Abundance")]) %>%
+  rename("Firmicutes.Abundance" = "Abundance")
+```
+
+# Add PC1 and PC2 to df
+```{r}
+paired.df <- merge(paired.df, df_out[,c("BIOM.ID", "PC1", "PC2")]) 
+```
+
+# Plotting
+
+Make plot of D8 and D15 alpha diversity and connect individuals with lines
+Maybe add plot of repeatability estimates from rtpR
+Could colour lines according to site then nest then individual? or just have lines connecting individuals coloured by nest
+
+Is this the best way of plotting repeatability? This is confusing me because how can individuals have 'consistent differences' when they are only measured twice and hence there is only a single slope for each individual?
+  Is it that an individual at D8 retains a similar difference to another individual, even when they have both aged from D8 to D15?
+
+Could try same plot as below but facet by positive or negative change
+
+# Shannon 
+## Reaction norm plot
+
+
+```{r}
+ggplot(paired.df, aes(ageBinned, shannon, fill=ageBinned)) +
+  geom_boxplot() +
+  geom_line(aes(group=bird.ID), position = position_dodge(0.2)) +
+  geom_point(aes(fill=ageBinned, group=bird.ID), position = position_dodge(0.2)) +
+  theme(legend.position = "none")
+```
+
+```{r}
+paired.boxplot.shannon <- ggplot(paired.df, aes(ageBinned, shannon, fill=ageBinned)) +
+  geom_boxplot(aes(alpha = 0.1)) +
+  geom_line(aes(group=bird.ID, colour = nest), position = position_dodge(0.2)) +
+  geom_point(aes(fill=ageBinned, group=bird.ID), position = position_dodge(0.2)) +
+  xlab("Age") +
+  ylab("Shannon diversity") +
+  theme_classic() +
+  theme(legend.position = "none")
+
+paired.boxplot.shannon
+```
+
+## Plot w/ rptR estimate 
+
+```{r}
+df <- rpt.shannon.birdID.nest.site.fixed
+
+df.rptr <- cbind(t(df[["R"]]),df[["CI_emp"]]) %>% 
+  tibble::rownames_to_column(var = "variable") %>%
+  rename("rpt" = "t(df[[\"R\"]])", "lower" = "2.5%", "upper" = "97.5%") # including escapes for \"
+  
+df.rptr$variable <- factor(df.rptr$variable, ordered = T, levels = c("site", "nest", "bird.ID", "Fixed"))
+
+df.rptr
+
+#str(df.rptr)
+```
+I should add something here to indicate significance. Though is this small LRT values or CI's that dont overlap zero? Sometimes these disagree e.g. for site
+```{r}
+rpt.confint.shannon <- ggplot(df.rptr, aes(rpt, variable)) +
+  geom_point() +
+  geom_linerange(aes(xmin = lower, xmax = upper)) +
+  xlab("Repeatability estimate") +
+  ylab("") +
+  scale_y_discrete(labels = c("Site", "Nest", "Bird ID", "Fixed")) +
+  theme_classic()
+
+rpt.confint.shannon
+```
+
+```{r}
+paired.rpt.shannon <- cowplot::plot_grid(paired.boxplot.shannon, rpt.confint.shannon)
+
+paired.rpt.shannon
+
+#ggsave("Fig-_rpt.tiff", plot = paired.rpt, device = "tiff", path = "../R_figures", width = 15, height = 10, units = "cm", dpi = 150)
+```
+
+# chao 
+## Reaction norm plot
+
+```{r}
+ggplot(paired.df, aes(ageBinned, chao1, fill=ageBinned)) +
+  geom_boxplot() +
+  geom_line(aes(group=bird.ID), position = position_dodge(0.2)) +
+  geom_point(aes(fill=ageBinned, group=bird.ID), position = position_dodge(0.2)) +
+  theme(legend.position = "none")
+```
+
+```{r}
+paired.boxplot.chao <- ggplot(paired.df, aes(ageBinned, chao1, fill=ageBinned)) +
+  geom_boxplot(aes(alpha = 0.1)) +
+  geom_line(aes(group=bird.ID, colour = nest), position = position_dodge(0.2)) +
+  geom_point(aes(fill=ageBinned, group=bird.ID), position = position_dodge(0.2)) +
+  xlab("Age") +
+  ylab("Chao1 diversity") +
+  theme_classic() +
+  theme(legend.position = "none")
+
+paired.boxplot.chao
+```
+
+## Plot w/ rptR estimate 
+
+```{r}
+df <- rpt.chao.birdID.nest.site.fixed
+
+df.rptr <- cbind(t(df[["R"]]),df[["CI_emp"]]) %>% 
+  tibble::rownames_to_column(var = "variable") %>%
+  rename("rpt" = "t(df[[\"R\"]])", "lower" = "2.5%", "upper" = "97.5%") # including escapes for \"
+  
+df.rptr$variable <- factor(df.rptr$variable, ordered = T, levels = c("site", "nest", "bird.ID", "Fixed"))
+
+df.rptr
+```
+I should add something here to indicate significance. Though is this small LRT values or CI's that dont overlap zero? Sometimes these disagree e.g. for site
+```{r}
+rpt.confint.chao <- ggplot(df.rptr, aes(rpt, variable)) +
+  geom_point() +
+  geom_linerange(aes(xmin = lower, xmax = upper)) +
+  xlab("Repeatability estimate") +
+  ylab("") +
+  scale_y_discrete(labels = c("Site", "Nest", "Bird ID", "Fixed")) +
+  theme_classic()
+
+rpt.confint.chao
+```
+
+```{r}
+paired.rpt.chao <- cowplot::plot_grid(paired.boxplot.chao, rpt.confint.chao)
+
+paired.rpt.chao
+
+#ggsave("Fig-_rpt.tiff", plot = paired.rpt, device = "tiff", path = "../R_figures", width = 15, height = 10, units = "cm", dpi = 150)
+```
+
+
+# Proteobacteria 
+## Reaction norm plot
+
+
+```{r}
+ggplot(paired.df, aes(ageBinned, Proteobacteria.Abundance/NumberOfReads, fill=ageBinned)) +
+  geom_boxplot() +
+  geom_line(aes(group=bird.ID), position = position_dodge(0.2)) +
+  geom_point(aes(fill=ageBinned, group=bird.ID), position = position_dodge(0.2)) +
+  theme(legend.position = "none")
+```
+
+```{r}
+paired.boxplot <- ggplot(paired.df, aes(ageBinned, Proteobacteria.Abundance/NumberOfReads, fill=ageBinned)) +
+  geom_boxplot(aes(alpha = 0.1)) +
+  geom_line(aes(group=bird.ID, colour = nest), position = position_dodge(0.2)) +
+  geom_point(aes(fill=ageBinned, group=bird.ID), position = position_dodge(0.2)) +
+  xlab("Age") +
+  ylab("Proteobacteria Relative Abundance") +
+  theme_classic() +
+  theme(legend.position = "none")
+
+paired.boxplot
+```
+
+## Plot w/ rptR estimate 
+
+Note: there are two options for Proprtion data, 'R_org' or 'R_link'
+* i will choose link here
+* need drop= F to keep it in dataframe format for proper cbinding
+```{r}
+df <- rpt.pro.bird.nest.site.fixed
+
+df.rptr <- cbind(t(df[["R"]])[,"R_link", drop = F], df[["CI_emp"]]$CI_link) %>% 
+  tibble::rownames_to_column(var = "variable") %>%
+  rename("rpt_link" = "R_link", "lower" = "2.5%", "upper" = "97.5%")
+  
+df.rptr$variable <- factor(df.rptr$variable, ordered = T, levels = c("site", "nest", "bird.ID", "Fixed"))
+
+df.rptr
+```
+
+I should add something here to indicate significance. Though is this small LRT values or CI's that dont overlap zero? Sometimes these disagree e.g. for site
+```{r}
+rpt.confint.proteo <- ggplot(df.rptr, aes(rpt_link, variable)) +
+  geom_point() +
+  geom_linerange(aes(xmin = lower, xmax = upper)) +
+  xlab("Repeatability estimate") +
+  ylab("") +
+  scale_y_discrete(labels = c("Site", "Nest", "Bird ID", "Fixed")) +
+  theme_classic()
+
+rpt.confint.proteo
+```
+
+```{r}
+paired.rpt.proteo <- cowplot::plot_grid(paired.boxplot, rpt.confint.proteo)
+
+paired.rpt.proteo
+
+#ggsave("Fig-_rpt.tiff", plot = paired.rpt, device = "tiff", path = "../R_figures", width = 15, height = 10, units = "cm", dpi = 150)
+```
+
+# Firmicutes 
+## Reaction norm plot
+
+
+```{r}
+ggplot(paired.df, aes(ageBinned, Firmicutes.Abundance/NumberOfReads, fill=ageBinned)) +
+  geom_boxplot() +
+  geom_line(aes(group=bird.ID), position = position_dodge(0.2)) +
+  geom_point(aes(fill=ageBinned, group=bird.ID), position = position_dodge(0.2)) +
+  theme(legend.position = "none")
+```
+
+```{r}
+paired.boxplot <- ggplot(paired.df, aes(ageBinned, Firmicutes.Abundance/NumberOfReads, fill=ageBinned)) +
+  geom_boxplot(aes(alpha = 0.1)) +
+  geom_line(aes(group=bird.ID, colour = nest), position = position_dodge(0.2)) +
+  geom_point(aes(fill=ageBinned, group=bird.ID), position = position_dodge(0.2)) +
+  xlab("Age") +
+  ylab("Firmicutes relative abundance") +
+  theme_classic() +
+  theme(legend.position = "none")
+
+paired.boxplot
+```
+
+## Plot w/ rptR estimate 
+
+```{r}
+df <- rpt.fir.bird.nest.site.fixed
+
+df.rptr <- cbind(t(df[["R"]])[,"R_link", drop = F], df[["CI_emp"]]$CI_link) %>% 
+  tibble::rownames_to_column(var = "variable") %>%
+  rename("rpt_link" = "R_link", "lower" = "2.5%", "upper" = "97.5%")
+   
+df.rptr$variable <- factor(df.rptr$variable, ordered = T, levels = c("site", "nest", "bird.ID", "Fixed"))
+
+df.rptr
+```
+I should add something here to indicate significance. Though is this small LRT values or CI's that dont overlap zero? Sometimes these disagree e.g. for site
+```{r}
+rpt.confint.firmic <- ggplot(df.rptr, aes(rpt_link, variable)) +
+  geom_point() +
+  geom_linerange(aes(xmin = lower, xmax = upper)) +
+  xlab("Repeatability estimate") +
+  ylab("") +
+  scale_y_discrete(labels = c("Site", "Nest", "Bird ID", "Fixed")) +
+  theme_classic()
+
+rpt.confint.firmic
+```
+
+```{r}
+paired.rpt.firmicutes <- cowplot::plot_grid(paired.boxplot, rpt.confint.firmic)
+
+paired.rpt.firmicutes
+
+#ggsave("Fig-_rpt.tiff", plot = paired.rpt, device = "tiff", path = "../R_figures", width = 15, height = 10, units = "cm", dpi = 150)
+```
+
+# PC1 
+## Reaction norm plot
+
+```{r}
+ggplot(paired.df, aes(ageBinned, PC1, fill=ageBinned)) +
+  geom_boxplot() +
+  geom_line(aes(group=bird.ID), position = position_dodge(0.2)) +
+  geom_point(aes(fill=ageBinned, group=bird.ID), position = position_dodge(0.2)) +
+  theme(legend.position = "none")
+```
+
+```{r}
+paired.boxplot <- ggplot(paired.df, aes(ageBinned, PC1, fill=ageBinned)) +
+  geom_boxplot(aes(alpha = 0.1)) +
+  geom_line(aes(group=bird.ID, colour = nest), position = position_dodge(0.2)) +
+  geom_point(aes(fill=ageBinned, group=bird.ID), position = position_dodge(0.2)) +
+  xlab("Age") +
+  ylab("PC1") +
+  theme_classic() +
+  theme(legend.position = "none")
+
+paired.boxplot
+```
+
+## Plot w/ rptR estimate 
+
+```{r}
+df <- rpt.pc1.bird.nest.site.fixed
+
+df.rptr <- cbind(t(df[["R"]]),df[["CI_emp"]]) %>% 
+  tibble::rownames_to_column(var = "variable") %>%
+  rename("rpt" = "t(df[[\"R\"]])", "lower" = "2.5%", "upper" = "97.5%") # including escapes for \"
+  
+df.rptr$variable <- factor(df.rptr$variable, ordered = T, levels = c("site", "nest", "bird.ID", "Fixed"))
+
+df.rptr
+```
+I should add something here to indicate significance. Though is this small LRT values or CI's that dont overlap zero? Sometimes these disagree e.g. for site
+```{r}
+rpt.confint.pc1 <- ggplot(df.rptr, aes(rpt, variable)) +
+  geom_point() +
+  geom_linerange(aes(xmin = lower, xmax = upper)) +
+  xlab("Repeatability estimate") +
+  ylab("") +
+  scale_y_discrete(labels = c("Site", "Nest", "Bird ID", "Fixed")) +
+  theme_classic()
+
+rpt.confint.pc1
+```
+
+```{r}
+paired.rpt.pc1 <- cowplot::plot_grid(paired.boxplot, rpt.confint.pc1)
+
+paired.rpt.pc1
+
+#ggsave("Fig-_rpt.tiff", plot = paired.rpt, device = "tiff", path = "../R_figures", width = 15, height = 10, units = "cm", dpi = 150)
+```
+
+# PC2 
+## Reaction norm plot
+
+
+```{r}
+ggplot(paired.df, aes(ageBinned, PC2, fill=ageBinned)) +
+  geom_boxplot() +
+  geom_line(aes(group=bird.ID), position = position_dodge(0.2)) +
+  geom_point(aes(fill=ageBinned, group=bird.ID), position = position_dodge(0.2)) +
+  theme(legend.position = "none")
+```
+
+```{r}
+paired.boxplot <- ggplot(paired.df, aes(ageBinned, PC2, fill=ageBinned)) +
+  geom_boxplot(aes(alpha = 0.1)) +
+  geom_line(aes(group=bird.ID, colour = nest), position = position_dodge(0.2)) +
+  geom_point(aes(fill=ageBinned, group=bird.ID), position = position_dodge(0.2)) +
+  xlab("Age") +
+  ylab("PC2") +
+  theme_classic() +
+  theme(legend.position = "none")
+
+paired.boxplot
+```
+
+## Plot w/ rptR estimate 
+
+```{r}
+df <- rpt.pc2.bird.nest.site.fixed
+
+df.rptr <- cbind(t(df[["R"]]),df[["CI_emp"]]) %>% 
+  tibble::rownames_to_column(var = "variable") %>%
+  rename("rpt" = "t(df[[\"R\"]])", "lower" = "2.5%", "upper" = "97.5%") # including escapes for \"
+  
+df.rptr$variable <- factor(df.rptr$variable, ordered = T, levels = c("site", "nest", "bird.ID", "Fixed"))
+
+df.rptr
+```
+I should add something here to indicate significance. Though is this small LRT values or CI's that dont overlap zero? Sometimes these disagree e.g. for site
+```{r}
+rpt.confint.pc2 <- ggplot(df.rptr, aes(rpt, variable)) +
+  geom_point() +
+  geom_linerange(aes(xmin = lower, xmax = upper)) +
+  xlab("Repeatability estimate") +
+  ylab("") +
+  scale_y_discrete(labels = c("Site", "Nest", "Bird ID", "Fixed")) +
+  theme_classic()
+
+rpt.confint.pc2
+```
+
+```{r}
+paired.rpt.pc2 <- cowplot::plot_grid(paired.boxplot, rpt.confint.pc2)
+
+paired.rpt.pc2
+
+#ggsave("Fig-_rpt.tiff", plot = paired.rpt, device = "tiff", path = "../R_figures", width = 15, height = 10, units = "cm", dpi = 150)
+```
+
+# Combine all plots
+
+```{r}
+paired.rpt.all <- cowplot::plot_grid(paired.rpt.shannon, paired.rpt.chao, paired.rpt.proteo, paired.rpt.firmicutes, paired.rpt.pc1, paired.rpt.pc2, ncol = 1)
+
+paired.rpt.all
+```
+
+# repeatability plots only
+
+```{r}
+rpt.combine <- plot_grid(plot_grid(rpt.confint.shannon + ylab("Alpha \n diversity") + theme(axis.title.x=element_blank()),
+                                  rpt.confint.chao+ theme(axis.title.x=element_blank()), 
+                                                          nrow = 1, labels = c("A", "B")),
+                         plot_grid(rpt.confint.proteo + ylab("Relative \n abundance")+ theme(axis.title.x=element_blank()),
+                                   rpt.confint.firmic + theme(axis.title.x=element_blank()), 
+                                   nrow = 1, labels = c("C", "D")),
+                         plot_grid(rpt.confint.pc1 + ylab("Beta \n diversity"), rpt.confint.pc2, 
+                                   nrow = 1, labels = c("E", "F")), nrow = 3)
+
+rpt.combine
+```
+
+```{r}
+ggsave("Fig6_rpt.tiff", plot = rpt.combine, device = "tiff", path = "../R_figures", width = 15, height = 10, units = "cm", dpi = 250)
+```
+

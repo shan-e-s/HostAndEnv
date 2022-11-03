@@ -1,0 +1,378 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Parent-offspring analysis, JQ request 1 June 2022
+Are offspring microbiome traits correlated with parent traits, controlling for woodland site etc.
+Related to repeatability discussion
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+library(lme4)
+library(phyloseq)
+library(microbiome)
+library(tidyverse)
+library(lmerTest)
+library(kableExtra)
+```
+
+```{r}
+nstlng.adult.df <- readRDS("../Data/ParentOffspringDF.rds")
+```
+
+
+# Avg/either parent analysis
+
+Make new variable explaining whether new variable value is both or either
+```{r}
+both <- !is.na(nstlng.adult.df$fe.shannon) & !is.na(nstlng.adult.df$m.shannon)
+male.only <- is.na(nstlng.adult.df$fe.shannon) & !is.na(nstlng.adult.df$m.shannon)
+female.only <- !is.na(nstlng.adult.df$fe.shannon) & is.na(nstlng.adult.df$m.shannon)
+neither <- is.na(nstlng.adult.df$fe.shannon) & is.na(nstlng.adult.df$m.shannon)
+
+# check
+#cbind(nstlng.adult.df$fe.shannon, nstlng.adult.df$m.shannon, both, male.only, female.only)
+```
+
+Make new variable which is either average of both parents or is either parent
+```{r}
+#nstlng.adult.df[both, "fe.shannon"]
+
+both.either.shannon <- c()
+both.either.char <- c()
+#i=6
+for (i in 1:nrow(nstlng.adult.df)) {
+  if (both[i]==TRUE) {
+    x <- c(nstlng.adult.df$fe.shannon[i], nstlng.adult.df$m.shannon[i])
+    both.either.shannon <- c(both.either.shannon, mean(x))
+    both.either.char <- c(both.either.char, "both")
+  } else if (male.only[i]==TRUE) {
+    both.either.shannon <- c(both.either.shannon, nstlng.adult.df$m.shannon[i])
+    both.either.char <- c(both.either.char, "male")
+  } else if (female.only[i]==TRUE) {
+    both.either.shannon <- c(both.either.shannon, nstlng.adult.df$fe.shannon[i])
+    both.either.char <- c(both.either.char, "female")
+  } else if (neither[i]==TRUE) {
+    both.either.shannon <- c(both.either.shannon, NA)
+    both.either.char <- c(both.either.char, "neither")}
+}
+# check
+#cbind(nstlng.adult.df$fe.shannon, nstlng.adult.df$m.shannon, both, male.only, female.only, both.either, both.either.char)
+```
+
+```{r}
+
+both.either.chao <- c()
+#i=6
+for (i in 1:nrow(nstlng.adult.df)) {
+  if (both[i]==TRUE) {
+    x <- c(nstlng.adult.df$fe.chao1[i], nstlng.adult.df$m.chao1[i])
+    both.either.chao <- c(both.either.chao, mean(x))
+  } else if (male.only[i]==TRUE) {
+    both.either.chao <- c(both.either.chao, nstlng.adult.df$m.chao1[i])
+  } else if (female.only[i]==TRUE) {
+    both.either.chao <- c(both.either.chao, nstlng.adult.df$fe.chao1[i])
+  } else if (neither[i]==TRUE) {
+    both.either.chao <- c(both.either.chao, NA)
+  }
+}
+
+# check
+#cbind(nstlng.adult.df$fe.chao1, nstlng.adult.df$m.chao1, both, male.only, female.only, both.either.chao, both.either.char)
+```
+
+Avg of phyla RA or abundance?
+* RA for now
+```{r}
+both.either.pro.RA <- c()
+
+for (i in 1:nrow(nstlng.adult.df)) {
+  if (both[i]==TRUE) {
+    x <- c(nstlng.adult.df$fe.pro.abu.RA[i], nstlng.adult.df$m.pro.abu.RA[i])
+    both.either.pro.RA <- c(both.either.pro.RA, mean(x))
+  } else if (male.only[i]==TRUE) {
+    both.either.pro.RA <- c(both.either.pro.RA, nstlng.adult.df$m.pro.abu.RA[i])
+  } else if (female.only[i]==TRUE) {
+    both.either.pro.RA <- c(both.either.pro.RA, nstlng.adult.df$fe.pro.abu.RA[i])
+  } else if (neither[i]==TRUE) {
+    both.either.pro.RA <- c(both.either.pro.RA, NA)
+  }
+}
+
+# check
+#cbind(nstlng.adult.df$fe.pro.abu.RA, nstlng.adult.df$m.pro.abu.RA, both, male.only, female.only, both.either.pro.RA, both.either.char)
+```
+
+```{r}
+both.either.fir.RA <- c()
+#i=6
+for (i in 1:nrow(nstlng.adult.df)) {
+  if (both[i]==TRUE) {
+    x <- c(nstlng.adult.df$fe.fir.abu.RA[i], nstlng.adult.df$m.fir.abu.RA[i])
+    both.either.fir.RA <- c(both.either.fir.RA, mean(x))
+  } else if (male.only[i]==TRUE) {
+    both.either.fir.RA <- c(both.either.fir.RA, nstlng.adult.df$m.fir.abu.RA[i])
+  } else if (female.only[i]==TRUE) {
+    both.either.fir.RA <- c(both.either.fir.RA, nstlng.adult.df$fe.fir.abu.RA[i])
+  } else if (neither[i]==TRUE) {
+    both.either.fir.RA <- c(both.either.fir.RA, NA)
+  }
+}
+
+# check
+#cbind(nstlng.adult.df$fe.fir.abu.RA, nstlng.adult.df$m.fir.abu.RA, both, male.only, female.only, both.either.fir.RA, both.either.char)
+```
+
+Add new var to df and remove var from env
+```{r}
+nstlng.adult.df <- cbind(nstlng.adult.df, both.either.shannon, both.either.chao, both.either.pro.RA, both.either.fir.RA, both.either.char)
+
+#rm(list = c("both","both.either.chao", "both.either.char", 
+# "both.either.fir.RA", "both.either.pro.RA", "both.either.shannon", 
+# "female.only", "i", "male.only", "neither", "x"))
+```
+
+### Shannon
+
+Both parents correlation with nestling
+* ensure only nests with both parents sampled included (39 nestlings, 12 nests)
+* control for age, has to be fixed effect due to few factor levels or use nestling ID as random term
+* dont think i need to centre and scale because on same scale?
+```{r, echo=FALSE, eval=FALSE}
+#offspring.parents.shannon <- lmer(nst.shannon ~ fe.shannon*ageBinned*m.shannon + (1|site/nest/bird.ID), data = nstlng.adult.df)
+offspring.parents.shannon <- lmer((nst.shannon) ~ both.either.shannon + both.either.char+ ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID), data = nstlng.adult.df)
+
+#summary(offspring.parents.shannon)
+offspring.parents.shannon.stdz <- arm::standardize(offspring.parents.shannon)
+# standardize
+summary(offspring.parents.shannon.stdz)
+```
+
+### chao
+```{r, echo=FALSE, eval=FALSE}
+offspring.parents.chao <- lmer(log(nst.chao1) ~ both.either.chao + both.either.char+ ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID), data = nstlng.adult.df)
+# standardize
+offspring.parents.chao.stdz <- arm::standardize(offspring.parents.chao)
+summary(offspring.parents.chao.stdz)
+```
+
+How to control for adult number of reads? Use fraction?
+
+### Proteobacteria RA
+```{r, echo=FALSE, eval=FALSE}
+binomial.response <- c(nstlng.adult.df$nst.pro.abu/nstlng.adult.df$nst.NumberOfReads)
+
+# using adult abundance directly
+#offspring.parents.proteo <- glmer(binomial.response ~  fe.pro.abu + m.pro.abu + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+#summary(arm::standardize(offspring.parents.proteo))
+
+# using adult abundance as fraction
+offspring.parents.proteo <- glmer(binomial.response ~  both.either.pro.RA+ both.either.char + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+
+offspring.parents.proteo.stdz <- arm::standardize(offspring.parents.proteo)
+summary(offspring.parents.proteo.stdz)
+
+#  ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned * DistanceToEdge + (1|site/nest) + (1|SequencePlate), family= binomial, weights = NumberOfReads, data = proteobacteria.df) # , REML=FALSE not valid argument
+```
+
+### Firmicutes RA
+
+Model nearly unidentifiable after standardizing
+```{r, echo=FALSE, eval=FALSE}
+binomial.response <- c(nstlng.adult.df$nst.fir.abu/nstlng.adult.df$nst.NumberOfReads)
+
+offspring.parents.firmic <- glmer(binomial.response ~  both.either.fir.RA + both.either.char + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+
+offspring.parents.firmic.stdz <- arm::standardize(offspring.parents.firmic)
+
+summary(offspring.parents.firmic.stdz)
+```
+
+# Female only
+### shannon
+
+Drop bird Id as singular fit
+
+DHARMa residuals poor
+* tried dropping brood size or lay date but no difference really
+```{r}
+offspring.female.shannon <- lmer((nst.shannon) ~ fe.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest), data = nstlng.adult.df)
+
+offspring.female.shannon.stdz <- arm::standardize(offspring.female.shannon)
+summary(offspring.female.shannon.stdz)
+```
+
+### chao
+Drop bird ID as singular fit
+Residual plots good
+```{r}
+offspring.female.chao <- lmer(log(nst.chao1) ~ fe.chao1 + ageBinned + habitat + broodSizeWhenSampled + layDateFirst +  (1|site/nest), data = nstlng.adult.df)
+
+offspring.female.chao.stdz <- arm::standardize(offspring.female.chao)
+summary(offspring.female.chao.stdz)
+```
+
+
+How to control for adult number of reads? Use fraction?
+
+### Proteobacteria RA
+
+Residual plots good
+```{r}
+binomial.response <- c(nstlng.adult.df$nst.pro.abu/nstlng.adult.df$nst.NumberOfReads)
+
+offspring.female.proteo <- glmer(binomial.response ~  fe.pro.abu.RA + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID) , family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df, control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+
+offspring.female.proteo.stdz <- arm::standardize(offspring.female.proteo)
+  
+summary(offspring.female.proteo.stdz)
+```
+
+### Firmicutes RA
+
+Residual plots good
+```{r}
+binomial.response <- c(nstlng.adult.df$nst.fir.abu/nstlng.adult.df$nst.NumberOfReads)
+
+#removed: habitat*DistanceToEdge
+offspring.female.firmic <- glmer(binomial.response ~  fe.fir.abu.RA + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+
+offspring.female.firmic.stdz <- arm::standardize(offspring.female.firmic)
+  
+summary(offspring.female.firmic.stdz)
+```
+
+# Male only
+
+### shannon
+
+Drop bird.ID due to singular fit
+
+Residuals poor
+```{r}
+offspring.male.shannon <- lmer(nst.shannon ~ m.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst +  (1|site/nest), data = nstlng.adult.df)
+
+offspring.male.shannon.stdz <-  arm::standardize(offspring.male.shannon)
+
+summary(offspring.male.shannon.stdz)
+```
+
+### chao
+Drop bird.ID due to singular fit
+
+DHARMa residuals are fine, squiggly lines but no tests significant
+```{r}
+offspring.male.chao <- lmer(log(nst.chao1) ~ m.chao1 + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest), data = nstlng.adult.df)
+
+offspring.male.chao.stdz <-  arm::standardize(offspring.male.chao)
+
+summary(offspring.male.chao.stdz)
+```
+
+
+How to control for adult number of reads? Use fraction?
+
+### Proteobacteria RA
+DHARMA plots alright
+```{r}
+binomial.response <- c(nstlng.adult.df$nst.pro.abu/nstlng.adult.df$nst.NumberOfReads)
+
+offspring.male.proteo <- glmer(binomial.response ~  m.pro.abu.RA + ageBinned + habitat + broodSizeWhenSampled + layDateFirst +  (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+
+offspring.male.proteo.stdz <- (arm::standardize(offspring.male.proteo))
+summary(offspring.male.proteo.stdz)
+```
+
+### Firmicutes RA
+
+DMARMA residuals ok but not great
+```{r}
+binomial.response <- c(nstlng.adult.df$nst.fir.abu/nstlng.adult.df$nst.NumberOfReads)
+
+offspring.male.firmic <- glmer(binomial.response ~  m.fir.abu.RA + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+
+offspring.male.firmic.stdz <- arm::standardize(offspring.male.firmic)
+summary(offspring.male.firmic.stdz)
+```
+
+
+# results
+
+### Female results
+```{r}
+offspring.female.shannon.result <- summary(arm::standardize(offspring.female.shannon))[["coefficients"]][,c(1,2,4,5)]
+offspring.female.chao.result<- summary(arm::standardize(offspring.female.chao))[["coefficients"]][,c(1,2,4,5)] #drop df column to allow rbind downstream
+offspring.female.proteo.result <- summary(arm::standardize(offspring.female.proteo))[["coefficients"]]
+offspring.female.firmic.result <- summary(arm::standardize(offspring.female.firmic))[["coefficients"]]
+```
+
+```{r}
+#make df of lmer output
+# dropping intercept
+female.df <- as_tibble(rbind(offspring.female.shannon.result[2:6,], offspring.female.chao.result[2:6,], offspring.female.proteo.result[2:6,], offspring.female.firmic.result[2:6,]), rownames="Independent variables") %>% 
+  dplyr::rename("P"="Pr(>|t|)") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "z.fe", replacement = "female") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "z.m", replacement = "male") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "pro.abu.RA", replacement = "proteobacteria") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "fir.abu.RA", replacement = "firmicutes") %>% 
+  #search for z.fe or z.m and replace
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P=ifelse(P==0,"<0.001",P)) #%>% 
+  #mutate(P=ifelse(P<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+ # mutate(P=ifelse(P>=0.05 & P<=0.06,str_c(P,"  ."),P))
+
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+female.results <- kable(female.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) Shannon diversity ",1,5) %>%
+  kableExtra::group_rows("(b) Chao diversity ",6,10) %>%
+  kableExtra::group_rows("(c) Proteobacteria RA ",11,15) %>%
+  kableExtra::group_rows("(d) Firmicutes RA ",16,20) %>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+female.results
+```
+
+### Male results
+
+```{r}
+offspring.male.shannon.result <- summary(arm::standardize(offspring.male.shannon))[["coefficients"]][,c(1,2,4,5)]
+offspring.male.chao.result<- summary(arm::standardize(offspring.male.chao))[["coefficients"]][,c(1,2,4,5)] #drop df column to allow rbind downstream
+offspring.male.proteo.result <- summary(arm::standardize(offspring.male.proteo))[["coefficients"]]
+offspring.male.firmic.result <- summary(arm::standardize(offspring.male.firmic))[["coefficients"]]
+```
+
+```{r}
+#make df of lmer output
+# dropping intercept
+male.df <- as_tibble(rbind(offspring.male.shannon.result[2:6,], offspring.male.chao.result[2:6,], offspring.male.proteo.result[2:6,], offspring.male.firmic.result[2:6,]), rownames="Independent variables") %>% 
+  dplyr::rename("P"="Pr(>|t|)") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "z.fe", replacement = "male") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "z.m", replacement = "male") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "pro.abu.RA", replacement = "proteobacteria") %>% 
+  mutate_if(is.character, str_replace_all, pattern = "fir.abu.RA", replacement = "firmicutes") %>% 
+  #search for z.fe or z.m and replace
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P=ifelse(P==0,"<0.001",P)) #%>% 
+  #mutate(P=ifelse(P<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+ # mutate(P=ifelse(P>=0.05 & P<=0.06,str_c(P,"  ."),P))
+
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+male.results <- kable(male.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) Shannon diversity ",1,5) %>%
+  kableExtra::group_rows("(b) Chao diversity ",6,10) %>%
+  kableExtra::group_rows("(c) Proteobacteria RA ",11,15) %>%
+  kableExtra::group_rows("(d) Firmicutes RA ",16,20) %>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+male.results
+```
