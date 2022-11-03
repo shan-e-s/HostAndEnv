@@ -1,0 +1,217 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Nestling only model averaging with beta diversity PC1 and PC2 as responses to determine which fixed effects to include in repeatability analyses.
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+#install.packages("rptR")
+library(MuMIn)
+library(microbiome)
+library(dplyr)
+library(vegan)
+library(arm)
+library(compositions)
+library(stringr)
+library(kableExtra)
+```
+
+
+# read in
+```{r}
+phylo.spring <- readRDS(file = "../Data/phylo-spring.rds")
+metadata <- meta(phylo.spring) # doesnt maintain Date data-type
+
+```
+
+# Create nestling dataset
+```{r}
+phylo.nestling <- subset_samples(phylo.spring, ageBinned!="adult")
+nestling.metadata <- meta(phylo.nestling@sam_data)
+rm(list = c("phylo.spring", "metadata"))
+```
+
+## scale numeric
+```{r}
+numeric.predictors <- c("QubitDNA","Tarsus","Weight", "wing", "broodSizeWhenSampled", "broodSizeMax", "totalFledge", "clutchSize", "layDateFirst", "numberDeadPreRinged", "numberDeadPostRinged","scaled.mass","scaled.mass.wing.adult", "scaled.mass.tarsus.adult","scaled.mass.chick", "scaled.mass.tarsus", "scaled.mass.wing", "DistanceToEdge")
+
+# centre and scale numeric variables ie. subtract mean and divide by st. deviation
+#nestling.metadata.scaled <- nestling.metadata
+nestling.metadata[,numeric.predictors] <- scale(nestling.metadata[,numeric.predictors])
+
+```
+
+
+Compositional method, use clr transform
+```{r}
+# Filter rare taxa
+phylo.knowles <- filter_taxa(phylo.nestling, function(x) sum(x > 1) > (0.05*length(x)), TRUE)
+```
+
+```{r}
+pk.otu.clr.dups <- clr(phylo.knowles@otu_table)
+aitchison.distance <- vegdist(pk.otu.clr.dups, method = "euclid")
+```
+
+PCA
+```{r}
+aitch.pca <- prcomp(aitchison.distance)
+```
+
+Code from:
+https://huboqiang.cn/2016/03/03/RscatterPlotPCA
+```{r}
+df_out <- as.data.frame(aitch.pca$x)[,1:2]
+df_out$site <- nestling.metadata$site
+df_out$nest <- nestling.metadata$nest
+df_out$bird.ID <- nestling.metadata$bird.ID
+df_out$habitat <- nestling.metadata$habitat
+df_out$ageBinned <- nestling.metadata$ageBinned
+df_out$broodSizeWhenSampled <- nestling.metadata$broodSizeWhenSampled
+df_out$layDateFirst <- nestling.metadata$layDateFirst
+df_out$DistanceToEdge <- nestling.metadata$DistanceToEdge
+df_out$SequencePlate <- nestling.metadata$SequencePlate
+
+
+
+head(df_out)
+```
+
+# PC1 model
+
+```{r}
+pc1.nestling <- lmer(PC1 ~ ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + layDateFirst*habitat+ broodSizeWhenSampled*habitat + DistanceToEdge*habitat + broodSizeWhenSampled*DistanceToEdge + DistanceToEdge*layDateFirst + (1|site/nest/bird.ID) + (1|SequencePlate), data = df_out, REML = TRUE)
+
+summary(pc1.nestling)
+```
+
+```{r}
+stdz.model <- standardize(pc1.nestling, standardize.y = FALSE)#, unchanged = "habitat")#, binary.inputs = "full")#
+summary(stdz.model)
+```
+
+```{r}
+# change na. action
+options(na.action = "na.fail") # required for dredge to run for some reason
+
+getAllTerms(stdz.model) 
+
+model.set <- dredge(stdz.model, rank="AICc", REML = FALSE)
+
+options(na.action = "na.omit") # set back to default
+
+```
+
+Extract top models and refit using REML
+```{r}
+top.models <- get.models(model.set, subset = delta<2, REML = TRUE)
+```
+
+
+## Model averaging: pc1
+
+"Note there are two sets of estimates: the “full” coefficients set terms to 0 if they are not included in the model while averaging, whereas the “conditional” coefficients ignores the predictors entirely. The “full” coefficients are thus more conservative and it is best practice to interpret these. "-uoftcoders
+```{r}
+model.avgPC1 <- model.avg(top.models)
+
+summary(model.avgPC1)
+```
+
+# PC2
+```{r}
+pc2.nestling <- lmer(PC2 ~ ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned*DistanceToEdge + layDateFirst*habitat+ broodSizeWhenSampled*habitat + DistanceToEdge*habitat + broodSizeWhenSampled*DistanceToEdge + DistanceToEdge*layDateFirst + (1|site/nest/bird.ID) + (1|SequencePlate), data = df_out, REML = TRUE)
+
+summary(pc2.nestling)
+```
+
+```{r}
+stdz.model <- standardize(pc2.nestling, standardize.y = FALSE)#, unchanged = "habitat")#, binary.inputs = "full")#
+summary(stdz.model)
+```
+
+```{r}
+# change na. action
+options(na.action = "na.fail") # required for dredge to run for some reason
+
+getAllTerms(stdz.model) 
+
+model.set <- dredge(stdz.model, rank="AICc", REML = FALSE)
+
+options(na.action = "na.omit") # set back to default
+
+```
+
+Extract top models and refit using REML
+```{r}
+top.models <- get.models(model.set, subset = delta<2, REML = TRUE)
+```
+
+
+## Model averaging: pc2
+
+"Note there are two sets of estimates: the “full” coefficients set terms to 0 if they are not included in the model while averaging, whereas the “conditional” coefficients ignores the predictors entirely. The “full” coefficients are thus more conservative and it is best practice to interpret these. "-uoftcoders
+```{r}
+model.avgPC2 <- model.avg(top.models)
+
+summary(model.avgPC2)
+```
+
+# Results
+## PC1 results
+Model average
+```{r}
+pc1.nestling.coef <- summary(model.avgPC1)$coefmat.subset # returns summary table for conditional average
+```
+
+```{r}
+#make df of lmer output
+pc1.modelAvg.df <- as_tibble(rbind(pc1.nestling.coef), rownames="Independent variables") %>%
+  dplyr::rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+  mutate(P_estimate=ifelse(P_estimate>=0.05 & P_estimate<=0.06,str_c(P_estimate,"  ."),P_estimate))
+
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+pc1.results <- kable(pc1.modelAvg.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) PC1",1,nrow(pc1.modelAvg.df)) %>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+pc1.results
+```
+
+## PC2 results
+Single model
+
+```{r}
+pc2.nest.coef <- summary(model.avgPC2)$coefmat.subset
+```
+
+```{r}
+#make df of lmer output
+pc2.modelAvg.df <- as_tibble((pc2.nest.coef), rownames="Independent variables") %>%
+  dplyr::rename("P_estimate"="Pr(>|z|)") %>% 
+  mutate_if(is.numeric, round, 3) %>%
+  mutate(P_estimate=ifelse(P_estimate==0,"<0.001",P_estimate)) %>% 
+  mutate(P_estimate=ifelse(P_estimate<=0.05,str_c(P_estimate," *"),P_estimate)) %>%
+  mutate(P_estimate=ifelse(P_estimate>=0.05 & P_estimate<=0.06,str_c(P_estimate,"  ."),P_estimate))
+
+
+# make df into kable
+## this is in html, dosnt render in word doc # but can copy-paste
+pc2.results <- kable(pc2.modelAvg.df, format = "html", table.attr = "style = \"color: black;\"") %>%
+  kableExtra::group_rows("(a) PC2",1,nrow(pc2.modelAvg.df)) %>%
+  kableExtra::kable_styling(full_width = F) #%>%
+  #save_kable("alpha-kable__________.png") # this line saves as .png in Reports/
+
+pc2.results
+```
+
