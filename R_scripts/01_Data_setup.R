@@ -9,6 +9,10 @@ rm(list=ls()) ## run fresh session instead of rm-list
 #set.seed(10)
 
 #install.packages("car")
+# if (!require("BiocManager", quietly = TRUE))
+#   install.packages("BiocManager")
+# 
+# BiocManager::install("metagenomeSeq")
 
 # libraries
 library(tidyverse)
@@ -18,7 +22,7 @@ library(microbiome)
 
 # NOTE: in rmd wd is automatically set to directory of rmd file, but for script it will be in project directory
 #getwd()
-load("Bioinformatics_qiime2/R_output/dada_outputCOMPLETE.rda")
+load("Data/dada_outputCOMPLETE.rda")
 #biom.spring <- import_biom("Data/Bird_microbiome_Spring/table_tax.biom")
 
 # read in tree (phylogeny)
@@ -202,14 +206,14 @@ site[which.control] <- "control"
 meta.alpha <- cbind(meta.alpha,site)
 
 #Add distance to edge variable for each nest. Calculating in separate script and sourcing. WHAT UNIT IS DISTANCE MEASURING??
-source("R_scripts_gtm/DistanceToEdge.R")
+source("R_scripts/01a_DistanceToEdge.R")
 ## FIND OUT WHAT UNIT THE DISTANCE IS MEASURING
 
 # need to merge on nest.ID
 meta.alpha.site <- merge.data.frame(meta.alpha, nestbox.edge[,c("nest","DistanceToEdge")], by = "nest", all.x=TRUE)
 
 # Add scaled body mass variable for all birds and then nestlings and adults separately
-source("R_scripts_gtm/ScaledBodyMass.R")
+source("R_scripts/01b_ScaledBodyMass.R")
 meta.alpha.site <- merge.data.frame(meta.alpha.site, scaled.mass.all, by = "BIOM.ID", all.x=TRUE)
 
 
