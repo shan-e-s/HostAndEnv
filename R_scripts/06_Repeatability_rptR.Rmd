@@ -21,6 +21,8 @@ rm(list=ls())
 library(rptR)
 library(microbiome)
 library(dplyr)
+library(vegan)
+library(compositions)
 ```
 
 ```{r}
@@ -39,6 +41,16 @@ metadata <- meta(phylo.spring) # doesnt maintain Date data-type
 phylo.nestling <- subset_samples(phylo.spring, ageBinned!="adult")
 nestling.metadata <- meta(phylo.nestling@sam_data)
 rm(list = c("phylo.spring", "metadata"))
+```
+
+## scale numeric
+```{r}
+numeric.predictors <- c("QubitDNA","Tarsus","Weight", "wing", "broodSizeWhenSampled", "broodSizeMax", "totalFledge", "clutchSize", "layDateFirst", "numberDeadPreRinged", "numberDeadPostRinged","scaled.mass","scaled.mass.wing.adult", "scaled.mass.tarsus.adult","scaled.mass.chick", "scaled.mass.tarsus", "scaled.mass.wing", "DistanceToEdge")
+
+# centre and scale numeric variables ie. subtract mean and divide by st. deviation
+#nestling.metadata.scaled <- nestling.metadata
+nestling.metadata[,numeric.predictors] <- scale(nestling.metadata[,numeric.predictors])
+
 ```
 
 # Shannon diversity agreement repeatability
@@ -117,7 +129,7 @@ print(rpt.shannon.birdID.nest.site.fixed)
 ```
 
 In this case the variance of the fixed effect is included in the denominator
-* very little change, so fixed efffects dont explain much variance
+* very little change, so fixed effects dont explain much variance
 ```{r}
 rpt.shannon.birdID.nest.site.fixed <- rpt(log(shannon) ~ ageBinned*habitat + (1|bird.ID) + (1|nest) + (1|site), grname = c("bird.ID", "nest", "site", "Fixed"), data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
 print(rpt.shannon.birdID.nest.site.fixed)
@@ -200,7 +212,7 @@ firmicutes.df <- firmicutes.df[!firmicutes.df$ageBinned=="adult",]
 ```
 
 Standardize datasets
-* using a more stanrdard standardising technique then i am for the actual modelling where i standardise after fitting model
+* using a more standard standardising technique then i am for the actual modelling where i standardise after fitting model
 ```{r}
 numeric.predictors <- c( "broodSizeWhenSampled", "clutchSize", "layDateFirst", "DistanceToEdge")
 
@@ -311,3 +323,148 @@ rpt.fir.bird.nest.site.fixed <- rpt(cbind(succ, fail) ~ ageBinned * habitat + ag
 
 print(rpt.fir.bird.nest.site.fixed)
 ```
+
+# Beta diversity, repeatability
+## create PC1 and PC2
+
+Compositional method, use clr transform
+```{r}
+# Filter rare taxa
+phylo.knowles <- filter_taxa(phylo.nestling, function(x) sum(x > 1) > (0.05*length(x)), TRUE)
+```
+
+```{r}
+pk.otu.clr.dups <- clr(phylo.knowles@otu_table)
+aitchison.distance <- vegdist(pk.otu.clr.dups, method = "euclid")
+```
+
+PCA
+```{r}
+aitch.pca <- prcomp(aitchison.distance)
+```
+
+Code from:
+https://huboqiang.cn/2016/03/03/RscatterPlotPCA
+```{r}
+df_out <- as.data.frame(aitch.pca$x)[,1:2]
+df_out$site <- nestling.metadata$site
+df_out$nest <- nestling.metadata$nest
+df_out$bird.ID <- nestling.metadata$bird.ID
+df_out$habitat <- nestling.metadata$habitat
+df_out$ageBinned <- nestling.metadata$ageBinned
+df_out$broodSizeWhenSampled <- nestling.metadata$broodSizeWhenSampled
+df_out$layDateFirst <- nestling.metadata$layDateFirst
+df_out$DistanceToEdge <- nestling.metadata$DistanceToEdge
+df_out$BIOM.ID <- nestling.metadata$BIOM.ID
+
+
+
+head(df_out)
+```
+# PC1
+
+Both PC's relatively normal looking
+```{r}
+hist(df_out$PC1)
+hist(df_out$PC2)
+```
+
+## Site only
+```{r}
+rpt.pc1.site <- rpt(PC1 ~ (1|site), grname = c("site"), data = df_out, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pc1.site)
+```
+
+## Nest only
+```{r}
+rpt.pc1.nest <- rpt(PC1 ~ (1|nest), grname = c("nest"), data = df_out, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pc1.nest)
+```
+
+## Bird ID only
+```{r}
+rpt.pc1.bird <- rpt(PC1 ~ (1|bird.ID), grname = c("bird.ID"), data = df_out, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pc1.bird)
+```
+
+## Bird ID and fixed
+Age, distance and age x habitat were the only significant fixed effects see script 04d_
+
+```{r}
+rpt.pc1.bird.fixed <- rpt(PC1 ~ ageBinned * habitat + DistanceToEdge + (1|bird.ID), grname = c("bird.ID", "Fixed"), data = df_out, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pc1.bird.fixed)
+```
+
+## Bird ID, nest and fixed
+```{r}
+rpt.pc1.bird.nest.fixed <- rpt(PC1 ~ ageBinned * habitat + DistanceToEdge + (1|bird.ID) + (1|nest), grname = c("bird.ID", "nest", "Fixed"), data = df_out, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pc1.bird.nest.fixed)
+```
+
+## Bird ID, nest, site and fixed
+```{r}
+rpt.pc1.bird.nest.site.fixed <- rpt(PC1 ~ ageBinned * habitat + DistanceToEdge + (1|bird.ID) + (1|nest) + (1|site), grname = c("bird.ID", "nest", "site", "Fixed"), data = df_out, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pc1.bird.nest.site.fixed)
+```
+
+# PC2
+
+## Site only
+```{r}
+rpt.pc2.site <- rpt(PC2 ~ (1|site), grname = c("site"), data = df_out, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pc2.site)
+```
+
+## Nest only
+```{r}
+rpt.pc2.nest <- rpt(PC2 ~ (1|nest), grname = c("nest"), data = df_out, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pc2.nest)
+```
+
+## Bird ID only
+```{r}
+rpt.pc2.bird <- rpt(PC2 ~ (1|bird.ID), grname = c("bird.ID"), data = df_out, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pc2.bird)
+```
+
+## Bird ID and fixed
+No significant fixed effects see script 04d
+```{r}
+#rpt.pc2.bird.fixed <- rpt(PC2 ~ + (1|bird.ID), grname = c("bird.ID", "Fixed"), data = df_out, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+#print(rpt.pc2.bird.fixed)
+```
+
+## Bird ID, nest and no fixed
+```{r}
+rpt.pc2.bird.nest.fixed <- rpt(PC2 ~ (1|bird.ID) + (1|nest), grname = c("bird.ID", "nest"), data = df_out, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pc2.bird.nest.fixed)
+```
+
+## Bird ID, nest, site and no fixed
+```{r}
+rpt.pc2.bird.nest.site.fixed <- rpt(PC2 ~ (1|bird.ID) + (1|nest) + (1|site), grname = c("bird.ID", "nest", "site"), data = df_out, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T, adjusted = FALSE)
+
+print(rpt.pc2.bird.nest.site.fixed)
+```
+
+
+# save outputs for plotting
+```{r}
+save(rpt.shannon.birdID.nest.site.fixed, rpt.chao.birdID.nest.site.fixed, 
+     rpt.pro.bird.nest.site.fixed, rpt.fir.bird.nest.site.fixed, 
+     rpt.pc1.bird.nest.site.fixed, rpt.pc2.bird.nest.site.fixed, 
+     nestling.metadata ,proteobacteria.df ,firmicutes.df, df_out, 
+     file = "../Data/Repeatability_models.rda")
+```
+
