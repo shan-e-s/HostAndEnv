@@ -34,6 +34,27 @@ hist(log(nstlng.adult.df$nst.chao1))
 ls()
 
 ```
+# both either
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = offspring.parents.shannon.stdz, n = 250)
+plot(simulationOutput)
+```
+
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = offspring.parents.chao.stdz, n = 250)
+plot(simulationOutput)
+```
+
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = offspring.parents.proteo.stdz, n = 250)
+plot(simulationOutput)
+```
+
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = offspring.parents.firmic.stdz, n = 250)
+plot(simulationOutput)
+```
+
 #female shannon
 ```{r}
 simulationOutput <- simulateResiduals(fittedModel = offspring.female.shannon.stdz, n = 250)

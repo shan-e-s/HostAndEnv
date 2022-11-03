@@ -25,28 +25,139 @@ nstlng.adult.df <- readRDS("../Data/ParentOffspringDF.rds")
 ```
 
 
-# Both parents
+# Avg/either parent analysis
+
+Make new variable explaining whether new variable value is both or either
+```{r}
+both <- !is.na(nstlng.adult.df$fe.shannon) & !is.na(nstlng.adult.df$m.shannon)
+male.only <- is.na(nstlng.adult.df$fe.shannon) & !is.na(nstlng.adult.df$m.shannon)
+female.only <- !is.na(nstlng.adult.df$fe.shannon) & is.na(nstlng.adult.df$m.shannon)
+neither <- is.na(nstlng.adult.df$fe.shannon) & is.na(nstlng.adult.df$m.shannon)
+
+# check
+#cbind(nstlng.adult.df$fe.shannon, nstlng.adult.df$m.shannon, both, male.only, female.only)
+```
+
+Make new variable which is either average of both parents or is either parent
+```{r}
+#nstlng.adult.df[both, "fe.shannon"]
+
+both.either.shannon <- c()
+both.either.char <- c()
+#i=6
+for (i in 1:nrow(nstlng.adult.df)) {
+  if (both[i]==TRUE) {
+    x <- c(nstlng.adult.df$fe.shannon[i], nstlng.adult.df$m.shannon[i])
+    both.either.shannon <- c(both.either.shannon, mean(x))
+    both.either.char <- c(both.either.char, "both")
+  } else if (male.only[i]==TRUE) {
+    both.either.shannon <- c(both.either.shannon, nstlng.adult.df$m.shannon[i])
+    both.either.char <- c(both.either.char, "male")
+  } else if (female.only[i]==TRUE) {
+    both.either.shannon <- c(both.either.shannon, nstlng.adult.df$fe.shannon[i])
+    both.either.char <- c(both.either.char, "female")
+  } else if (neither[i]==TRUE) {
+    both.either.shannon <- c(both.either.shannon, NA)
+    both.either.char <- c(both.either.char, "neither")}
+}
+# check
+#cbind(nstlng.adult.df$fe.shannon, nstlng.adult.df$m.shannon, both, male.only, female.only, both.either, both.either.char)
+```
+
+```{r}
+
+both.either.chao <- c()
+#i=6
+for (i in 1:nrow(nstlng.adult.df)) {
+  if (both[i]==TRUE) {
+    x <- c(nstlng.adult.df$fe.chao1[i], nstlng.adult.df$m.chao1[i])
+    both.either.chao <- c(both.either.chao, mean(x))
+  } else if (male.only[i]==TRUE) {
+    both.either.chao <- c(both.either.chao, nstlng.adult.df$m.chao1[i])
+  } else if (female.only[i]==TRUE) {
+    both.either.chao <- c(both.either.chao, nstlng.adult.df$fe.chao1[i])
+  } else if (neither[i]==TRUE) {
+    both.either.chao <- c(both.either.chao, NA)
+  }
+}
+
+# check
+#cbind(nstlng.adult.df$fe.chao1, nstlng.adult.df$m.chao1, both, male.only, female.only, both.either.chao, both.either.char)
+```
+
+Avg of phyla RA or abundance?
+* RA for now
+```{r}
+both.either.pro.RA <- c()
+
+for (i in 1:nrow(nstlng.adult.df)) {
+  if (both[i]==TRUE) {
+    x <- c(nstlng.adult.df$fe.pro.abu.RA[i], nstlng.adult.df$m.pro.abu.RA[i])
+    both.either.pro.RA <- c(both.either.pro.RA, mean(x))
+  } else if (male.only[i]==TRUE) {
+    both.either.pro.RA <- c(both.either.pro.RA, nstlng.adult.df$m.pro.abu.RA[i])
+  } else if (female.only[i]==TRUE) {
+    both.either.pro.RA <- c(both.either.pro.RA, nstlng.adult.df$fe.pro.abu.RA[i])
+  } else if (neither[i]==TRUE) {
+    both.either.pro.RA <- c(both.either.pro.RA, NA)
+  }
+}
+
+# check
+#cbind(nstlng.adult.df$fe.pro.abu.RA, nstlng.adult.df$m.pro.abu.RA, both, male.only, female.only, both.either.pro.RA, both.either.char)
+```
+
+```{r}
+both.either.fir.RA <- c()
+#i=6
+for (i in 1:nrow(nstlng.adult.df)) {
+  if (both[i]==TRUE) {
+    x <- c(nstlng.adult.df$fe.fir.abu.RA[i], nstlng.adult.df$m.fir.abu.RA[i])
+    both.either.fir.RA <- c(both.either.fir.RA, mean(x))
+  } else if (male.only[i]==TRUE) {
+    both.either.fir.RA <- c(both.either.fir.RA, nstlng.adult.df$m.fir.abu.RA[i])
+  } else if (female.only[i]==TRUE) {
+    both.either.fir.RA <- c(both.either.fir.RA, nstlng.adult.df$fe.fir.abu.RA[i])
+  } else if (neither[i]==TRUE) {
+    both.either.fir.RA <- c(both.either.fir.RA, NA)
+  }
+}
+
+# check
+#cbind(nstlng.adult.df$fe.fir.abu.RA, nstlng.adult.df$m.fir.abu.RA, both, male.only, female.only, both.either.fir.RA, both.either.char)
+```
+
+Add new var to df and remove var from env
+```{r}
+nstlng.adult.df <- cbind(nstlng.adult.df, both.either.shannon, both.either.chao, both.either.pro.RA, both.either.fir.RA, both.either.char)
+
+#rm(list = c("both","both.either.chao", "both.either.char", 
+# "both.either.fir.RA", "both.either.pro.RA", "both.either.shannon", 
+# "female.only", "i", "male.only", "neither", "x"))
+```
+
 ### Shannon
 
 Both parents correlation with nestling
-* ensure only nests with both parents sampled included (38 or 39???)
+* ensure only nests with both parents sampled included (39 nestlings, 12 nests)
 * control for age, has to be fixed effect due to few factor levels or use nestling ID as random term
 * dont think i need to centre and scale because on same scale?
 ```{r, echo=FALSE, eval=FALSE}
 #offspring.parents.shannon <- lmer(nst.shannon ~ fe.shannon*ageBinned*m.shannon + (1|site/nest/bird.ID), data = nstlng.adult.df)
-offspring.parents.shannon <- lmer(nst.shannon ~ fe.shannon + m.shannon + (1|site/nest/bird.ID), data = nstlng.adult.df)
+offspring.parents.shannon <- lmer((nst.shannon) ~ both.either.shannon + both.either.char+ ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID), data = nstlng.adult.df)
 
 #summary(offspring.parents.shannon)
-
+offspring.parents.shannon.stdz <- arm::standardize(offspring.parents.shannon)
 # standardize
-summary(arm::standardize(offspring.parents.shannon))
+summary(offspring.parents.shannon.stdz)
 ```
 
 ### chao
 ```{r, echo=FALSE, eval=FALSE}
-offspring.parents.chao <- lmer(nst.chao1 ~ fe.chao1 + m.chao1 + (1|site/nest/bird.ID), data = nstlng.adult.df)
+offspring.parents.chao <- lmer(log(nst.chao1) ~ both.either.chao + both.either.char+ ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID), data = nstlng.adult.df)
 # standardize
-summary(arm::standardize(offspring.parents.chao))
+offspring.parents.chao.stdz <- arm::standardize(offspring.parents.chao)
+summary(offspring.parents.chao.stdz)
 ```
 
 How to control for adult number of reads? Use fraction?
@@ -60,19 +171,25 @@ binomial.response <- c(nstlng.adult.df$nst.pro.abu/nstlng.adult.df$nst.NumberOfR
 #summary(arm::standardize(offspring.parents.proteo))
 
 # using adult abundance as fraction
-offspring.parents.proteo <- glmer(binomial.response ~  fe.pro.abu.RA + m.pro.abu.RA + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
-summary(arm::standardize(offspring.parents.proteo))
+offspring.parents.proteo <- glmer(binomial.response ~  both.either.pro.RA+ both.either.char + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+
+offspring.parents.proteo.stdz <- arm::standardize(offspring.parents.proteo)
+summary(offspring.parents.proteo.stdz)
 
 #  ageBinned * habitat + ageBinned * layDateFirst + ageBinned * broodSizeWhenSampled + ageBinned * DistanceToEdge + (1|site/nest) + (1|SequencePlate), family= binomial, weights = NumberOfReads, data = proteobacteria.df) # , REML=FALSE not valid argument
 ```
 
 ### Firmicutes RA
 
+Model nearly unidentifiable after standardizing
 ```{r, echo=FALSE, eval=FALSE}
 binomial.response <- c(nstlng.adult.df$nst.fir.abu/nstlng.adult.df$nst.NumberOfReads)
 
-offspring.parents.firmic <- glmer(binomial.response ~  fe.fir.abu.RA + m.fir.abu.RA + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
-summary(arm::standardize(offspring.parents.firmic))
+offspring.parents.firmic <- glmer(binomial.response ~  both.either.fir.RA + both.either.char + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest/bird.ID), family= binomial, weights = nst.NumberOfReads, data = nstlng.adult.df)
+
+offspring.parents.firmic.stdz <- arm::standardize(offspring.parents.firmic)
+
+summary(offspring.parents.firmic.stdz)
 ```
 
 # Female only
@@ -83,7 +200,7 @@ Drop bird Id as singular fit
 DHARMa residuals poor
 * tried dropping brood size or lay date but no difference really
 ```{r}
-offspring.female.shannon <- lmer(nst.shannon ~ fe.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest), data = nstlng.adult.df)
+offspring.female.shannon <- lmer((nst.shannon) ~ fe.shannon + ageBinned + habitat + broodSizeWhenSampled + layDateFirst + (1|site/nest), data = nstlng.adult.df)
 
 offspring.female.shannon.stdz <- arm::standardize(offspring.female.shannon)
 summary(offspring.female.shannon.stdz)

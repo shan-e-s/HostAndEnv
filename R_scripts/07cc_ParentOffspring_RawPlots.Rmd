@@ -5,12 +5,36 @@ output: html_notebook
 
 Raw plots for parent-offspring analyses
 
-```{r}
 
-```
 
 ```{r}
 library(ggplot2)
+```
+
+
+```{r}
+hist((nstlng.adult.df$nst.shannon))
+hist(log(nstlng.adult.df$nst.shannon))
+hist(nstlng.adult.df$nst.chao1)
+
+```
+```{r}
+#nstlng.adult.df <- droplevels(nstlng.adult.df)
+
+ggplot(nstlng.adult.df, aes(log(both.either.fir.RA), nst.fir.abu/nst.NumberOfReads, fill = both.either.char)) +
+  geom_smooth(method = "lm") +
+  geom_point() +
+  facet_grid(~both.either.char)
+
+#min(nstlng.adult.df$both.either.fir.RA)
+```
+
+```{r}
+
+ggplot(nstlng.adult.df, aes(both.either.shannon, nst.shannon, fill = both.either.char)) +
+  geom_smooth(method = "lm")+
+  geom_point(aes(color = both.either.char))
+
 ```
 
 Coloring points according to nest was hard to interpret because of so many unused levels and hence similar colours being used. the following drops unused levels in parent specific df. Specific to either mother or father.

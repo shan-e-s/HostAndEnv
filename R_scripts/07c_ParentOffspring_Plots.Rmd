@@ -12,19 +12,27 @@ library(jtools)
 library(interactions)
 ```
 
-# raw plots
+# both either analysis
+```{r}
+interact_plot(offspring.parents.shannon.stdz, pred=z.both.either.shannon , modx=both.either.char, partial.residuals = TRUE, x.label="Shannon (parents)", y.label="Nestling Shannon", interval =TRUE, int.type = "confidence", jitter = 0, point.size = 0.75, outcome.scale = "link", legend.main = "Which parent", modx.labels = c("both", "fe", "m"), data = offspring.parents.shannon.stdz@frame) + theme_classic()
+```
 
 
 # model plots
-Do i trust jtools?
-
 
 # Female shannon
 ```{r}
-effect_plot(offspring.female.shannon.stdz, pred=z.fe.shannon, partial.residuals = TRUE, x.label="Shannon (mother)", y.label="Nestling Shannon", interval =TRUE, int.type = "confidence", point.size = 0.75, outcome.scale = "link") + theme_classic()
+offspring.fe.plot <- effect_plot(offspring.female.shannon.stdz, pred=z.fe.shannon, partial.residuals = TRUE, x.label="Shannon (mother)", y.label="Nestling Shannon", interval =TRUE, int.type = "confidence", point.size = 0.75, outcome.scale = "link") + theme_classic()
+
+offspring.fe.plot
 
 interact_plot(offspring.female.shannon.stdz, pred=z.fe.shannon, modx=c.ageBinned, partial.residuals = TRUE, x.label="Shannon (mother)", y.label="Nestling Shannon", interval =TRUE, int.type = "confidence", jitter = 0, point.size = 0.75, outcome.scale = "link", legend.main = "Age", modx.labels = c("Day 8", "Day 15")) + theme_classic()
 ```
+
+```{r}
+ggsave("OffspringMother_shannon", plot = offspring.fe.plot, device = "tiff", path = "../R_figures", width = 14, height = 7, units = "cm", dpi = 200)
+```
+
 ##############
 #### check
 are there truly 50-something nests represented here?
