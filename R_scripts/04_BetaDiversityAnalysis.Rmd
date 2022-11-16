@@ -41,8 +41,9 @@ library(arm)
 ```
 
 ```{r}
-library(devtools)
-install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+#library(devtools)
+#install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+library(pairwiseAdonis)
 ```
 
 ```{r Read in data, warning=FALSE, echo=FALSE}
@@ -54,31 +55,7 @@ phylo.spring
 
 # Data cleaning
 
-Remove individuals measured twice
-* set.seed so same individuals dropped
-* no adults measured twice
-```{r}
-#n_occur <- data.frame(table(metadata.NoDups$bird.ID))
-#n_occur[n_occur$Freq > 1,]
-
-set.seed(1189)
-metadata.NoDups <- metadata %>% 
-    group_by(bird.ID) %>%
-    sample_n(1)
-
-dropped.samples <- setdiff(metadata$BIOM.ID, metadata.NoDups$BIOM.ID)
-
-# metadata.even <- metadata %>% 
-#     group_by(bird.ID) %>%
-#     sample_n(min(table(metadata$bird.ID)))
-
-table(metadata$ageBinned)
-table(metadata.NoDups$ageBinned)
-```
-
 ```{r Data splits, echo=FALSE}
-# relevel ageBinned factor
-metadata.NoDups$ageBinned <- relevel(metadata.NoDups$ageBinned, "1week")
 
 # relevel habitat
 #metadata.NoDups$habitat <- relevel(metadata.NoDups$habitat, "deciduous")
@@ -94,9 +71,6 @@ Do i need to scale numeric variables?
 numeric.predictors <- c("QubitDNA","Tarsus","Weight", "wing", "broodSizeWhenSampled", "broodSizeMax", "totalFledge", "clutchSize", "layDateFirst", "numberDeadPreRinged", "numberDeadPostRinged","scaled.mass","scaled.mass.wing.adult", "scaled.mass.tarsus.adult","scaled.mass.chick", "scaled.mass.tarsus", "scaled.mass.wing", "DistanceToEdge")
 
 # centre and scale numeric variables ie. subtract mean and divide by st. deviation
-metadata.NoDups.scaled <- metadata.NoDups
-metadata.NoDups.scaled[,numeric.predictors] <- scale(metadata.NoDups.scaled[,numeric.predictors])
-
 metadata.scaled <- metadata
 metadata.scaled[,numeric.predictors] <- scale(metadata.scaled[,numeric.predictors])
 
@@ -186,8 +160,8 @@ check.nest <- adonis2(aitchison.dist.dups ~ ageBinned + habitat + layDateFirst +
 
 check.nest
 ```
-```
 
+## Main model
 ```{r}
 perms.dups <- with(metadata, how(nperm = 1000, blocks = nest))
 
@@ -196,12 +170,14 @@ all.adonis.dups.fixed <- adonis2(aitchison.dist.dups ~ ageBinned + habitat + lay
 all.adonis.dups.fixed
 ```
 
+
+## Pairwise adonis, duplicates
 ```{r}
-pairwiseAdonis::pairwise.adonis2(aitchison.dist.dups ~ ageBinned + habitat, data = metadata.scaled)
+pairwiseAdonis::pairwise.adonis2(aitchison.dist.dups ~ ageBinned * habitat, data = metadata.scaled)
 #?pairwise.adonis2()
 ```
 
-Try same as above but strata by sequence plate and then inlcude individual ID
+Try same as above but strata by sequence plate and then include individual ID
 ```{r}
 # perms.dups <- with(metadata, how(nperm = 1000, blocks = SequencePlate))
 # 
@@ -227,7 +203,7 @@ Including bird.ID as a fixed effect and blocking by nest suggests age is in fact
 # all.adonis.dups.fixed
 ```
 
-
+## Model, interaction age x habitat
 ```{r}
 perms.dups <- with(metadata, how(nperm = 1000, blocks = nest))
 
@@ -244,312 +220,189 @@ adonis2(aitchison.dist.dups ~ ageBinned*habitat + layDateFirst + broodSizeWhenSa
 ```
 
 ## check influence of unbalanced design
+ *see 04a___balanced script*
 
+# All birds, w/o duplicates
+Reviewer is asking about pseudoreplication due to repeated samples- does it influence results
+
+## create no duplicate data
+
+Remove individuals measured twice
+* set.seed so same individuals dropped
+* no adults measured twice
 ```{r}
-table(metadata$ageBinned, metadata$habitat)
-```
+#n_occur <- data.frame(table(metadata.NoDups$bird.ID))
+#n_occur[n_occur$Freq > 1,]
 
-For loop sample equal numbers of from each habitat and age combination
-```{r}
+set.seed(1189)
+metadata.NoDups <- metadata %>% 
+    group_by(bird.ID) %>%
+    sample_n(1)
 
-```
+dropped.samples <- setdiff(metadata$BIOM.ID, metadata.NoDups$BIOM.ID)
 
-## Plot PCA
+# metadata.even <- metadata %>% 
+#     group_by(bird.ID) %>%
+#     sample_n(min(table(metadata$bird.ID)))
 
-```{r}
-aitch.pca <- prcomp(aitchison.dist.dups)
-#plot(aitch.pca)
-biplot(aitch.pca)
-
-autoplot(aitch.pca, data = metadata)#, colour = "ageBinned", loadings = T, loadings.label = T, scale = 0)
-```
-Code from:
-https://huboqiang.cn/2016/03/03/RscatterPlotPCA
-```{r}
-df_out <- as.data.frame(aitch.pca$x)
-df_out$ageBinned <- metadata$ageBinned
-df_out$habitat <- metadata$habitat
-df_out$layDateFirst <- metadata$layDateFirst
-df_out$broodSizeWhenSampled <- metadata$broodSizeWhenSampled
-
-head(df_out)
-```
-
-Calculate the PC loadings for labels
-* took these from different sites and they disagree alot
-```{r}
-# Sum the total variance
-d.mvar <- sum(aitch.pca$sdev^2)
-# Calculate the PC1 and PC2 variance
-PC1.label <- paste("PC1: ", round(sum(aitch.pca$sdev[1]^2)/d.mvar, 3)*100,"%")
-PC2.label <- paste("PC2: ", round(sum(aitch.pca$sdev[2]^2)/d.mvar, 3)*100,"%")
-
-#percentage <- round(aitch.pca$sdev / sum(aitch.pca$sdev) * 100, 2)
-#percentage <- paste( colnames(df_out), "(", paste( as.character(percentage), "%", ")", sep="") )
-
-#screeplot(aitch.pca)
-```
-
-Plot
-* Use same name and label for fill and shape in order to overlap legends
-* ellipse default is 95% confidence level for t distribution
-* can draw euclid ellipse where level = radius, but how to choose radius?
-* alpha specifies the transparency
-* https://stats.stackexchange.com/questions/217374/real-meaning-of-confidence-ellipse
-
-```{r}
-p <- ggplot(df_out,aes(x=PC1,y=PC2, color=ageBinned ))
-p <- p + geom_point(aes(shape = habitat)) + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
-p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
-                      aes(group = interaction(ageBinned, habitat), fill = habitat, colour = ageBinned))
-p <- p + scale_fill_discrete(name = "Habitat", labels = c("Conifer", "Deciduous"))
-p <- p + scale_shape_discrete(name = "Habitat", labels = c("Conifer", "Deciduous"))
-p <- p + scale_color_discrete(name = "Age", labels = c("Day 8", "Day 15", "Adult"))
-#p <- p + scale_shape_discrete(element_blank())#, labels = NULL)
-#p + facet_grid(habitat~.)
-
-#theme<-theme(panel.background = element_blank(), panel.border=element_rect(fill=NA), panel.grid.major = element_blank(), panel.grid.minor = element_blank(),strip.background=element_blank(), axis.text.x=element_text(colour="black"), axis.text.y=element_text(colour="black"), axis.ticks=element_line(colour="black"), plot.margin=unit(c(1,1,1,1),"line"))
-
-p+theme_classic()
-```
-
-Try euclidian ellipses, specify radius with level
-```{r}
-p <- ggplot(df_out,aes(x=PC1,y=PC2, color=ageBinned ))
-p <- p + geom_point(aes(shape = habitat)) + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
-p <- p + stat_ellipse(geom = "polygon", type="euclid", alpha=0.1,level = 10,
-                      aes(group = interaction(ageBinned, habitat), fill = habitat, colour = ageBinned))
-p <- p + scale_fill_discrete(name = "Habitat", labels = c("Conifer", "Deciduous"))
-p <- p + scale_shape_discrete(name = "Habitat", labels = c("Conifer", "Deciduous"))
-p <- p + scale_color_discrete(name = "Age", labels = c("Day 8", "Day 15", "Adult"))
-#p <- p + scale_shape_discrete(element_blank())#, labels = NULL)
-#p + facet_grid(habitat~.)
-
-#theme<-theme(panel.background = element_blank(), panel.border=element_rect(fill=NA), panel.grid.major = element_blank(), panel.grid.minor = element_blank(),strip.background=element_blank(), axis.text.x=element_text(colour="black"), axis.text.y=element_text(colour="black"), axis.ticks=element_line(colour="black"), plot.margin=unit(c(1,1,1,1),"line"))
-
-p+theme_classic()
+table(metadata$ageBinned)
+table(metadata.NoDups$ageBinned)
 ```
 
 ```{r}
-facet.labels <- c("Conifer", "Deciduous")
-names(facet.labels) <- c("conifer", "deciduous")
-p + theme_classic() + facet_grid(habitat~., labeller = labeller(habitat = facet.labels))
+#remove dropped samples
+phylo.NoDuplicates <- subset_samples(phylo.spring, BIOM.ID %in%  metadata.NoDups$BIOM.ID)
+
+setdiff(meta(phylo.NoDuplicates)$BIOM.ID , metadata.NoDups$BIOM.ID)
+setdiff( metadata.NoDups$BIOM.ID, meta(phylo.NoDuplicates)$BIOM.ID)
 ```
 
 ```{r}
-# plot_ordination(phylo.TSS, ordBC, color = "ageBinned") + 
-#   geom_point(size=3) + 
-#   ggtitle("Ord: Bray-Curtis") + stat_ellipse(geom = "polygon", type="t", alpha=0.1, aes(fill=ageBinned))+ 
-#   theme_bw() +  theme(panel.grid.major = element_blank(),
-#                       panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"), 
-#                       panel.border = element_rect(linetype = "solid", colour = "black", size=.8)) +
-#                       theme(text=element_text(size=14,  family="serif"), axis.ticks = element_line(colour = "black", size = .7))+
-#                       geom_point()
+# centre and scale numeric variables ie. subtract mean and divide by st. deviation
+metadata.NoDups.scaled <- metadata.NoDups
+metadata.NoDups.scaled[,numeric.predictors] <- scale(metadata.NoDups.scaled[,numeric.predictors])
 ```
 
-Plot features that contribute to classification
+## filter and transform
 ```{r}
-df_out_r <- as.data.frame(aitch.pca$rotation)
-df_out_r$feature <- row.names(df_out_r)
-df_out_r$ageBinned <- metadata$ageBinned
-df_out_r$habitat <- metadata$habitat
-df_out_r$layDateFirst <- metadata$layDateFirst
-df_out_r$broodSizeWhenSampled <- metadata$broodSizeWhenSampled
-df_out_r$DistanceToEdge <- metadata$DistanceToEdge
-
-
-df_out_r
-
-p<-ggplot(df_out_r,aes(x=PC1,y=PC2,label=ageBinned,color=habitat ))
-#p<-p+geom_point()+theme + geom_text(size=3) + theme(legend.position = "none")
-p
-```
-
-Plot 
-one plot for each habitat ((ellipses each age)
-* change aplha to 0.05?
-```{r}
-p <- ggplot(df_out,aes(x=PC1,y=PC2, color=ageBinned ))
-p <- p + geom_point() + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
-p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
-                      aes(group = interaction(ageBinned), fill = ageBinned, colour = ageBinned))
-p <- p + scale_color_discrete(name = "Age", labels = c("Day 8", "Day 15", "Adult"))
-p <- p + scale_fill_discrete(element_blank(), labels = NULL)
-#p + facet_grid(habitat~.)
-
-p+theme_classic()
-facet.labels <- c("Conifer", "Deciduous")
-names(facet.labels) <- c("conifer", "deciduous")
-p + theme_classic() + facet_grid(habitat~., labeller = labeller(habitat = facet.labels))
-```
-
-one plot for each age (ellipses each habitat)
-```{r}
-p <- ggplot(df_out,aes(x=PC1,y=PC2, color=habitat ))
-p <- p + geom_point() + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
-p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
-                      aes(group = (habitat), fill = habitat, colour = habitat))
-p <- p + scale_color_discrete(name = "Habitat", labels = c("Conifer", "Deciduous"))
-p <- p + scale_fill_discrete(element_blank(), labels = NULL)
-#p + facet_grid(habitat~.)
-
-p+theme_classic()
-facet.labels <- c("Day 8", "Day 15", "Adult")
-names(facet.labels) <- c("1week", "2week", "adult")
-p + theme_classic() + facet_grid(ageBinned~., labeller = labeller(ageBinned = facet.labels))
-```
-
-# JQ requested plots
-## ellipses for just age
-one plot for each age (ellipses each habitat)
-```{r}
-p <- ggplot(df_out,aes(x=PC1,y=PC2, color=ageBinned ))
-p <- p + geom_point() + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
-p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
-                      aes(group = (ageBinned), fill = ageBinned, colour = ageBinned))
-p <- p + scale_color_discrete(name = "Age", labels = c("D8", "D15", "Adult"))
-p <- p + scale_fill_discrete(element_blank(), labels = NULL)
-#p + facet_grid(habitat~.)
-
-p+theme_classic()
-
-p.age <- p
-```
-## ellipses for just habitat
-```{r}
-p <- ggplot(df_out,aes(x=PC1,y=PC2, color=habitat ))
-p <- p + geom_point() + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
-p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
-                      aes(group = (habitat), fill = habitat, colour = habitat))
-p <- p + scale_color_discrete(name = "Habitat", labels = c("Conifer", "Deciduous"))
-p <- p + scale_fill_discrete(element_blank(), labels = NULL)
-#p + facet_grid(habitat~.)
-
-p+theme_classic()
-
-p.habitat <- p
-```
-
-## Combine age and habitat plots
-```{r}
-theme_classic2 <- function(base_size = 12, base_family = ""){
-  theme_bw(base_size = base_size, base_family = base_family) %+replace%
-    theme(
-      legend.position = "none",
-      panel.border     = element_blank(),
-      axis.line        = element_line(colour = "black"),
-      panel.grid.major=element_line(colour="grey", size=0.5, 3),
-      panel.grid.major.x = element_blank(),
-      panel.grid.major.y = element_blank(),
-      panel.grid.minor = element_blank(),
-      panel.grid.minor.x = element_blank(),
-      panel.grid.minor.y = element_blank(),
-      strip.background = element_blank(),
-      legend.key       = element_blank(),
-      plot.title = element_text(hjust = 0.5, face = "bold") # centre and bold title
-    )
-}
+# Filter rare taxa
+phylo.knowles.NoDuplicates <- filter_taxa(phylo.NoDuplicates, function(x) sum(x > 1) > (0.05*length(x)), TRUE)
 ```
 
 ```{r}
-p3 <- plot_grid(p.age+theme_classic2()+labs(title=""), p.habitat+theme_classic2()+labs(title=""), ncol=2, labels = c("A", "B"))
-
+pk.otu.clr.Nodups <- clr(phylo.knowles.NoDuplicates@otu_table)
+aitchison.dist.Nodups <- vegdist(pk.otu.clr.Nodups, method = "euclid")
 ```
 
-## brood size
+## model
 ```{r}
-p <- ggplot(df_out,aes(x=PC1,y=PC2, color=as.factor(broodSizeWhenSampled )))
-p <- p + geom_point() + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
-p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
-                      aes(group = (as.factor(broodSizeWhenSampled )), fill = as.factor(broodSizeWhenSampled ), colour = as.factor(broodSizeWhenSampled )))
-p <- p + scale_color_discrete(name = "Brood Size")
-p <- p #+ scale_fill_discrete(element_blank(), labels = NULL)
-#p + facet_grid(habitat~.)
-
-p+theme_classic()
-```
-
-##
-```{r}
-envfit1 <- envfit(aitch.pca~broodSizeWhenSampled, data = metadata, main="", col="red")
-#plot(aitch.pca, type = "n")
-plot(envfit1)
-```
-
-## Smooth surface/surf plot
-```{r}
-surf <- ordisurf(aitch.pca~broodSizeWhenSampled, data = metadata, main="", col="red")
-#metadata$broodSizeWhenSampled
-
-head(rownames(metadata))
-head(aitch.pca$x)
-
+perms.Nodups <- with(metadata.NoDups.scaled, how(nperm = 1000, blocks = nest))
+# 
+all.adonis.Nodups.fixed <- adonis2(aitchison.dist.Nodups ~ ageBinned + habitat + layDateFirst + broodSizeWhenSampled + DistanceToEdge + SequencePlate, by="margin", method="euclidian", data = metadata.NoDups.scaled, permutations = perms.Nodups)
+# 
+all.adonis.Nodups.fixed
 ```
 
 ```{r}
-# from Jennys email + https://chrischizinski.github.io/rstats/ordisurf/
-species.scores <- as.data.frame(scores(aitch.pca, "species")) # have to keep species here as the taxa
-species.scores$genus <- rownames(species.scores)
-names(species.scores)[c(1, 2)] <- c("x", "y")
-species.scores$z <- NA
+perms.Nodups <- with(metadata.NoDups.scaled, how(nperm = 1000, blocks = nest))
+# 
+all.adonis.Nodups.int <- adonis2(aitchison.dist.Nodups ~ ageBinned*habitat + layDateFirst + broodSizeWhenSampled + DistanceToEdge + SequencePlate, by="margin", data = metadata.NoDups.scaled, permutations = perms.Nodups) #
 
-data.scores <- as.data.frame(scores(dtradult.mds))
-data.scores$birdid <- rownames(data.scores)
-data.scores$Detourreach <- dtrwild.surf$detourwild
+all.adonis.Nodups.int
 ```
 
-
-
+Interaction calc by term rather than margin to get estimates for main effects as well as interaction term
 ```{r}
-extract.xyz <- function(obj) {
-    xy <- expand.grid(x = obj$grid$x, y = obj$grid$y)
-    xyz <- cbind(xy, c(obj$grid$z))
-    names(xyz) <- c("x", "y", "z")
-    return(xyz)
-}
+# perms.dups <- with(metadata, how(nperm = 1000, blocks = nest))
+# 
+# adonis2(aitchison.dist.dups ~ ageBinned*habitat + layDateFirst + broodSizeWhenSampled + DistanceToEdge + SequencePlate, by="term", data = metadata.scaled, permutations = perms.dups) #
 
-#head(surf)
-contour.vals <- extract.xyz(obj = surf)
-head(contour.vals)
-```
-```{r}
-ggplot(data = contour.vals, aes(x, y, z = z)) + stat_contour(aes(colour = )) + theme_classic()
-#coord_cartesian(xlim = c(-10, 10), ylim = c(-10, 10.5))
 ```
 
-https://userweb.eng.gla.ac.uk/umer.ijaz/bioinformatics/ecological.html
+## test dispersion for no duplicate dataset
 ```{r}
-#Get MDS stats
-sol<-metaMDS(abund_table,distance = "bray", k = 2, trymax = 50)
- 
-#We use meta_table$Temp to plot temperature values on the plot. You can select
-#any other variable
-#> names(meta_table)
-#[1] "pH"         "Temp"       "TS"         "VS"         "VFA"        "CODt"      
-#[7] "CODs"       "perCODsbyt" "NH4"        "Prot"       "Carbo"
-#Reference:http://oliviarata.wordpress.com/2014/07/17/ordinations-in-ggplot2-v2-ordisurf/
-ordi<-ordisurf(sol,meta_table$Temp,plot = FALSE, bs="ds")
-ordi <- surf
-ordi.grid <- ordi$grid #extracts the ordisurf object
-str(ordi.grid) #it's a list though - cannot be plotted as is
-ordi.mite <- expand.grid(x = ordi.grid$x, y = ordi.grid$y) #get x and ys
-ordi.mite$z <- as.vector(ordi.grid$z) #unravel the matrix for the z scores
-ordi.mite.na <- data.frame(na.omit(ordi.mite)) #gets rid of the nas
- 
-PCA_ss <- data.frame(x=aitch.pca$point[,1],y=aitch.pca$point[,2],Type=groups)
- 
-p<-ggplot()+
-  stat_contour(data = ordi.mite.na, aes(x = x, y = y, z = z, colour = ..level..),positon="identity")+ #can change the binwidth depending on how many contours you want
-  geom_point(data=PCA_ss,aes(x,y,fill=Type),pch=21,size=3,colour=NA)
-p<-p+scale_colour_continuous(high = "darkgreen", low = "darkolivegreen1") #here we set the high and low of the colour scale.  Can delete to go back to the standard blue, or specify others
-p<-p+labs(colour = "Temperature") #another way to set the labels, in this case, for the colour legend
-p<-p+theme_bw()
-#p<-p+theme(legend.key = element_blank(),  #removes the box around each legend item
-#              legend.position = "bottom", #legend at the bottom
-#              legend.direction = "horizontal",
-#              legend.box = "horizontal",
-#              legend.box.just = "centre")
-p
+#hist(metadata$layDateFirst)
+#ist(sqrt(metadata$DistanceToEdge))
+
+dispersion1 <- betadisper(aitchison.dist.Nodups, metadata.NoDups$ageBinned)  #, bias.adjust = T
+print(permutest(dispersion1, pairwise=FALSE, permutations=1000))
+
+dispersion2 <- betadisper(aitchison.dist.Nodups, metadata.NoDups$habitat)  #, bias.adjust = T
+print(permutest(dispersion2, pairwise=FALSE, permutations=1000))
+
+dispersion3 <- betadisper(aitchison.dist.Nodups, (metadata.NoDups$layDateFirst))  #, bias.adjust = T
+print(permutest(dispersion3, pairwise=FALSE, permutations=1000))
+
+dispersion4 <- betadisper(aitchison.dist.Nodups, metadata.NoDups$broodSizeWhenSampled)  #, bias.adjust = T
+print(permutest(dispersion4, pairwise=FALSE, permutations=1000))
+
+dispersion5 <- betadisper(aitchison.dist.Nodups, (metadata.NoDups$DistanceToEdge))  #, bias.adjust = T
+print(permutest(dispersion5, pairwise=FALSE, permutations=1000))
+
+dispersion6 <- betadisper(aitchison.dist.Nodups, metadata.NoDups$SequencePlate)  #, bias.adjust = T
+print(permutest(dispersion6, pairwise=FALSE, permutations=1000))
+```
+
+## Pairwise adonis, no duplicates
+```{r}
+pairwiseAdonis::pairwise.adonis2(aitchison.dist.Nodups ~ ageBinned + habitat, data = metadata.NoDups.scaled)
+#?pairwise.adonis2()
+```
+
+# D8+adults
+```{r}
+phylo.d8 <- subset_samples(phylo.spring, ageBinned!="2week")
+d8.meta <- meta(phylo.d8@sam_data)
+
+
+d8.meta.scaled <- d8.meta
+d8.meta.scaled[,numeric.predictors] <- scale(d8.meta.scaled[,numeric.predictors])
+```
+
+```{r}
+# Filter rare taxa
+phylo.knowles.d8 <- filter_taxa(phylo.d8, function(x) sum(x > 1) > (0.05*length(x)), TRUE)
+```
+
+```{r}
+d8.clr <- clr(phylo.d8@otu_table)
+aitch.d8 <- vegdist(d8.clr, method = "euclid")
+```
+
+## Main model
+```{r}
+perms.dups <- with(d8.meta, how(nperm = 1000, blocks = nest))
+
+d8.adonis <- adonis2(aitch.d8 ~ ageBinned * habitat + layDateFirst + broodSizeWhenSampled + DistanceToEdge + SequencePlate, by="margin", method="euclidian", data = d8.meta.scaled, permutations = perms.dups)
+
+d8.adonis
+```
+
+## Main model, fixed only
+```{r}
+perms.dups <- with(d8.meta, how(nperm = 1000, blocks = nest))
+
+d8.adonis <- adonis2(aitch.d8 ~ ageBinned + habitat + layDateFirst + broodSizeWhenSampled + DistanceToEdge + SequencePlate, by="margin", method="euclidian", data = d8.meta.scaled, permutations = perms.dups)
+
+d8.adonis
+```
+
+# D15+adults
+```{r}
+phylo.d15 <- subset_samples(phylo.spring, ageBinned!="1week")
+d15.meta <- meta(phylo.d15@sam_data)
+
+
+d15.meta.scaled <- d15.meta
+d15.meta.scaled[,numeric.predictors] <- scale(d15.meta.scaled[,numeric.predictors])
+```
+
+```{r}
+# Filter rare taxa
+phylo.knowles.d15 <- filter_taxa(phylo.d15, function(x) sum(x > 1) > (0.05*length(x)), TRUE)
+```
+
+```{r}
+d15.clr <- clr(phylo.d15@otu_table)
+aitch.d15 <- vegdist(d15.clr, method = "euclid")
+```
+
+## Main model
+```{r}
+perms.dups <- with(d15.meta, how(nperm = 1000, blocks = nest))
+
+d15.adonis <- adonis2(aitch.d15 ~ ageBinned * habitat + layDateFirst + broodSizeWhenSampled + DistanceToEdge + SequencePlate, by="margin", method="euclidian", data = d15.meta.scaled, permutations = perms.dups)
+
+d15.adonis
+```
+
+## Main model, fixed only
+```{r}
+perms.dups <- with(d15.meta, how(nperm = 1000, blocks = nest))
+
+d15.adonis <- adonis2(aitch.d15 ~ ageBinned + habitat + layDateFirst + broodSizeWhenSampled + DistanceToEdge + SequencePlate, by="margin", method="euclidian", data = d15.meta.scaled, permutations = perms.dups)
+
+d15.adonis
 ```
 
 # Adult birds: CoDa
@@ -624,4 +477,5 @@ all.bdiv.results <- kable(all.bdiv, format = "html", table.attr = "style = \"col
 
 all.bdiv.results
 ```
+
 
