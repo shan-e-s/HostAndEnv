@@ -5,6 +5,13 @@ output: html_notebook
 
 Plots for beta diversity
 
+Notes from original script (i.e. modelling script)
+ Plot
+* Use same name and label for fill and shape in order to overlap legends
+* ellipse default is 95% confidence level for t distribution
+* can draw euclid ellipse where level = radius, but how to choose radius?
+* alpha specifies the transparency
+* https://stats.stackexchange.com/questions/217374/real-meaning-of-confidence-ellipse
 # Set-up and libraries
 
 ```{r Housekeeping, echo=FALSE}
@@ -139,19 +146,21 @@ p.age <- p
 Colours for nests and shapes for age
 ```{r}
 p <- ggplot(df_out, aes(x=PC1, y=PC2, color=nest))
-p <- p + geom_point(show.legend = F, aes(shape = ageBinned)) + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
+p <- p + geom_point(show.legend = T, aes(shape = ageBinned)) + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
 p
 
 p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0, 
-                      aes(group = ageBinned, colour = ageBinned)) #colour = c("red", "blue", "orange"),
+                      aes(group = ageBinned, colour = nest)) #colour = c("red", "blue", "orange"),
 p
 
 #p <- p + scale_color_discrete(name = "Age", labels = c("D8", "D15", "Adult"))
-p <- p + scale_fill_discrete(element_blank(), labels = NULL)
+#p <- p + scale_fill_discrete(element_blank(), labels = NULL)
 #p + facet_grid(habitat~.)
-p <- p + guides(colour = "none")
+#p <- p + guides(colour = "none")
 
-p+theme_classic()
+reviewer.3 <- p+theme_classic()
+
+ggsave("reviewer_3.tiff", plot = reviewer.3, device = "tiff", path = "../R_figures", width = 20, height = 10, units = "cm", dpi = 120)
 
 #p.age <- p
 ```
