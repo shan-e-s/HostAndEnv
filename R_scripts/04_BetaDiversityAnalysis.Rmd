@@ -367,6 +367,39 @@ d8.adonis <- adonis2(aitch.d8 ~ ageBinned + habitat + layDateFirst + broodSizeWh
 d8.adonis
 ```
 
+### Nest as fixed
+```{r}
+#perms.dups <- with(d8.meta, how(nperm = 1000, blocks = nest))
+
+d8.adonis <- adonis2(aitch.d8 ~ ageBinned + habitat + layDateFirst + broodSizeWhenSampled + DistanceToEdge + SequencePlate + nest, by="margin", method="euclidian", data = d8.meta.scaled)
+
+d8.adonis
+```
+
+## test dispersion for D8-adult dataset
+```{r}
+#hist(metadata$layDateFirst)
+#ist(sqrt(metadata$DistanceToEdge))
+
+dispersion1 <- betadisper(aitch.d8, d8.meta$ageBinned)  #, bias.adjust = T
+print(permutest(dispersion1, pairwise=FALSE, permutations=1000))
+
+dispersion2 <- betadisper(aitch.d8, d8.meta$habitat)  #, bias.adjust = T
+print(permutest(dispersion2, pairwise=FALSE, permutations=1000))
+
+dispersion3 <- betadisper(aitch.d8, d8.meta$layDateFirst)  #, bias.adjust = T
+print(permutest(dispersion3, pairwise=FALSE, permutations=1000))
+
+dispersion4 <- betadisper(aitch.d8, d8.meta$broodSizeWhenSampled)  #, bias.adjust = T
+print(permutest(dispersion4, pairwise=FALSE, permutations=1000))
+
+dispersion5 <- betadisper(aitch.d8, d8.meta$DistanceToEdge)  #, bias.adjust = T
+print(permutest(dispersion5, pairwise=FALSE, permutations=1000))
+
+dispersion6 <- betadisper(aitch.d8, d8.meta$SequencePlate)  #, bias.adjust = T
+print(permutest(dispersion6, pairwise=FALSE, permutations=1000))
+```
+
 # D15+adults
 ```{r}
 phylo.d15 <- subset_samples(phylo.spring, ageBinned!="1week")
@@ -405,6 +438,38 @@ d15.adonis <- adonis2(aitch.d15 ~ ageBinned + habitat + layDateFirst + broodSize
 d15.adonis
 ```
 
+### Nest as fixed
+```{r}
+#perms.dups <- with(d8.meta, how(nperm = 1000, blocks = nest))
+
+d15.adonis <- adonis2(aitch.d15 ~ ageBinned + habitat + layDateFirst + broodSizeWhenSampled + DistanceToEdge + SequencePlate + nest, by="margin", method="euclidian", data = d15.meta.scaled)
+
+d15.adonis
+```
+
+## test dispersion for D15-adult dataset
+```{r}
+#hist(metadata$layDateFirst)
+#ist(sqrt(metadata$DistanceToEdge))
+
+dispersion1 <- betadisper(aitch.d15, d15.meta$ageBinned)  #, bias.adjust = T
+print(permutest(dispersion1, pairwise=FALSE, permutations=1000))
+
+dispersion2 <- betadisper(aitch.d15, d15.meta$habitat)  #, bias.adjust = T
+print(permutest(dispersion2, pairwise=FALSE, permutations=1000))
+
+dispersion3 <- betadisper(aitch.d15, d15.meta$layDateFirst)  #, bias.adjust = T
+print(permutest(dispersion3, pairwise=FALSE, permutations=1000))
+
+dispersion4 <- betadisper(aitch.d15, d15.meta$broodSizeWhenSampled)  #, bias.adjust = T
+print(permutest(dispersion4, pairwise=FALSE, permutations=1000))
+
+dispersion5 <- betadisper(aitch.d15, d15.meta$DistanceToEdge)  #, bias.adjust = T
+print(permutest(dispersion5, pairwise=FALSE, permutations=1000))
+
+dispersion6 <- betadisper(aitch.d15, d15.meta$SequencePlate)  #, bias.adjust = T
+print(permutest(dispersion6, pairwise=FALSE, permutations=1000))
+```
 # Adult birds: CoDa
 
 Aitchison distance is supposedly robust to subsetting- can i therefore just subset the adult birds from previous distance calculation?
