@@ -22,7 +22,7 @@ rm(list=ls())
 
 ```{r Set-up, message=FALSE, echo=FALSE}
 # libraries
-#install.packages("tcltk", dependencies = T)
+#install.packages("viridis")
 library(vegan)  ##note had trouble installing, needed to install gfortran first
 library(tidyverse) #
 library(phyloseq) 
@@ -35,7 +35,8 @@ library(compositions)
 # library(ggfortify)
 # library(ggplot2)
 library(cowplot)
-# 
+library(RColorBrewer)
+library(viridis)
 # library(arm)
 ```
 
@@ -59,22 +60,285 @@ metadata <- metadata %>%
          "adult" = "Adult"
      )
 )
+
+sample_data(phylo.spring) <- metadata
 ```
 
 Do i need to scale numeric variables?
 ```{r}
 numeric.predictors <- c("QubitDNA","Tarsus","Weight", "wing", "broodSizeWhenSampled", "broodSizeMax", "totalFledge", "clutchSize", "layDateFirst", "numberDeadPreRinged", "numberDeadPostRinged","scaled.mass","scaled.mass.wing.adult", "scaled.mass.tarsus.adult","scaled.mass.chick", "scaled.mass.tarsus", "scaled.mass.wing", "DistanceToEdge")
-
-# centre and scale numeric variables ie. subtract mean and divide by st. deviation
-metadata.scaled <- metadata
-metadata.scaled[,numeric.predictors] <- scale(metadata.scaled[,numeric.predictors])
-
-# metadata.NoDups.scaled <- metadata.NoDups
-# metadata.NoDups.scaled[,numeric.predictors] <- scale(metadata.NoDups.scaled[,numeric.predictors])
-# 
-# adults.meta.scaled <- adults.meta
-# adults.meta.scaled[,numeric.predictors] <- scale(adults.meta.scaled[,numeric.predictors])
 ```
+
+# D8+adults
+```{r}
+phylo.d8 <- subset_samples(phylo.spring, ageBinned!="D15")
+d8.meta <- meta(phylo.d8@sam_data)
+```
+
+
+```{r}
+d8.meta.scaled <- d8.meta
+d8.meta.scaled[,numeric.predictors] <- scale(d8.meta.scaled[,numeric.predictors])
+```
+
+```{r}
+# Filter rare taxa
+phylo.knowles.d8 <- filter_taxa(phylo.d8, function(x) sum(x > 1) > (0.05*length(x)), TRUE)
+```
+
+```{r}
+d8.clr <- clr(phylo.d8@otu_table)
+aitch.d8 <- vegdist(d8.clr, method = "euclid")
+```
+
+PCA
+```{r}
+aitch.pca.d8 <- prcomp(aitch.d8)
+```
+
+Calculate the PC loadings for labels
+* took these from different sites and they disagree alot
+```{r}
+# Sum the total variance
+d.mvar <- sum(aitch.pca.d8$sdev^2)
+# Calculate the PC1 and PC2 variance
+PC1.label <- paste("PC1: ", round(sum(aitch.pca.d8$sdev[1]^2)/d.mvar, 3)*100,"%")
+PC2.label <- paste("PC2: ", round(sum(aitch.pca.d8$sdev[2]^2)/d.mvar, 3)*100,"%")
+
+#percentage <- round(aitch.pca$sdev / sum(aitch.pca$sdev) * 100, 2)
+#percentage <- paste( colnames(df_out), "(", paste( as.character(percentage), "%", ")", sep="") )
+
+#screeplot(aitch.pca)
+```
+
+Code from:
+https://huboqiang.cn/2016/03/03/RscatterPlotPCA
+```{r}
+df_out <- as.data.frame(aitch.pca.d8$x)
+df_out$ageBinned <- d8.meta$ageBinned
+df_out$habitat <- d8.meta$habitat
+df_out$layDateFirst <- d8.meta$layDateFirst
+df_out$broodSizeWhenSampled <- d8.meta$broodSizeWhenSampled
+df_out$nest <- d8.meta$nest
+
+
+head(df_out)
+```
+
+## ellipses for just age
+one plot for each age
+```{r}
+p <- ggplot(df_out,aes(x=PC1,y=PC2, color=ageBinned ))
+p <- p + geom_point() + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
+p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
+                      aes(group = (ageBinned), fill = ageBinned, colour = ageBinned))
+p <- p + scale_color_discrete(name = "Age", labels = c("D8", "Adult"))
+p <- p + scale_fill_discrete(element_blank(), labels = NULL)
+#p + facet_grid(habitat~.)
+
+p+theme_classic()
+
+p.age.d8 <- p
+```
+
+## ellipses for just habitat
+Change colours to differ from age fill = c("#5ab4ac", "#d8b365")
+```{r}
+p <- ggplot(df_out,aes(x=PC1,y=PC2, color=habitat ))
+p <- p + geom_point(aes(alpha=0.5)) + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
+p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
+                      aes(group = (habitat), fill = habitat, colour = habitat))
+p <- p + scale_fill_discrete(element_blank(), labels = NULL)
+p <- p + scale_color_brewer(palette = "Set1", name = "Habitat", labels = c("Conifer", "Deciduous")) +   theme_classic()
+p <- p + guides(colour = guide_legend(order = 1))
+p <- p + guides(alpha = "none", fill = "none") # get rid of unwanted legends
+#p <- p + scale_color_discrete(name = "Habitat", labels = c("Conifer", "Deciduous"))
+
+#p + facet_grid(habitat~.)
+
+p
+
+p.habitat.d8 <- p
+```
+
+```{r}
+# p.age.habitat <- plot_grid(p.age+theme_classic()+labs(title=""), p.habitat+theme_classic()+labs(title=""), ncol=1, labels = c("A", "B"))
+# 
+# p.age.habitat
+```
+
+## Dispersion, ggplot age
+
+```{r}
+dispersion <- betadisper(aitch.d8, d8.meta[,"ageBinned"])
+```
+
+code from https://chrischizinski.github.io/rstats/adonis/ 
+
+Note the centroids bit expects samples to be ordered by age group
+* had been plotting with incorrect segments
+```{r}
+# extract the centroids and the site points in multivariate space.  
+centroids<-data.frame(grps=rownames(dispersion$centroids),data.frame(dispersion$centroids))
+vectors<-data.frame(group=dispersion$group,data.frame(dispersion$vectors))
+
+# to create the lines from the centroids to each point we will put it in a format that ggplot can handle
+seg.data<-cbind(arrange(vectors[,1:3], group), centroids[rep(1:nrow(centroids), as.data.frame(table(vectors$group))$Freq),2:3])
+names(seg.data)<-c("group","v.PCoA1","v.PCoA2","PCoA1","PCoA2")
+
+# create the convex hulls of the outermost points
+grp1.hull<-seg.data[seg.data$group=="D8",1:3][chull(seg.data[seg.data$group=="D8",2:3]),]
+grp3.hull<-seg.data[seg.data$group=="Adult",1:3][chull(seg.data[seg.data$group=="Adult",2:3]),]
+all.hull<-rbind(grp1.hull,grp3.hull)
+
+```
+
+
+```{r}
+age.dispersion <- ggplot() + 
+  geom_polygon(data=all.hull,aes(x=v.PCoA1,y=v.PCoA2, colour = group),alpha=0) +
+  geom_segment(data=seg.data,aes(x=v.PCoA1,xend=PCoA1,y=v.PCoA2,yend=PCoA2),alpha=0.30) + 
+  geom_point(data=centroids[,1:3], aes(x=PCoA1,y=PCoA2,colour=grps),size=2) + 
+ # geom_label(aes(x =-0.3701276, y=0.6068285, label = "D8")) +
+  #geom_label(aes(x =0.8799281, y=0.4656689, label = "D15")) +
+  #geom_label(aes(x =0.4046661, y=-1.3055476, label = "Adult")) +
+  #geom_point(data=seg.data, aes(x=v.PCoA1,y=v.PCoA2,colour=group),size=2) +
+  labs(title="",x="",y="") +
+  theme_classic() +
+  scale_color_discrete(name = "Age") 
+
+age.dispersion
+```
+Set axes limits inside of coord_cartesian otherwise plot drops segments that exceed limits
+```{r}
+age.dispersion.d8.limitAxes <- ggplot() + 
+  geom_polygon(data=all.hull,aes(x=v.PCoA1,y=v.PCoA2, colour = group),alpha=0) +
+  geom_segment(data=seg.data,aes(x=v.PCoA1,xend=PCoA1,y=v.PCoA2,yend=PCoA2, colour = group),alpha=0.50) + 
+  geom_point(data=centroids[,1:3], aes(x=PCoA1,y=PCoA2),size=2) + 
+ # geom_label(aes(x =-0.3701276, y=0.6068285, label = "D8")) +
+  #geom_label(aes(x =0.8799281, y=0.4656689, label = "D15")) +
+  #geom_label(aes(x =0.4046661, y=-1.3055476, label = "Adult")) +
+  #geom_point(data=seg.data, aes(x=v.PCoA1,y=v.PCoA2,colour=group),size=2) +
+  labs(title="",x="",y="") +
+  theme_classic() +
+  scale_color_discrete(name = "Age") + 
+  coord_cartesian(xlim=c(-10, 5), ylim = c(-10,20))
+
+age.dispersion.d8.limitAxes
+```
+
+# D15
+
+```{r}
+phylo.d15 <- subset_samples(phylo.spring, ageBinned!="D8")
+d15.meta <- meta(phylo.d15@sam_data)
+
+
+d15.meta.scaled <- d15.meta
+d15.meta.scaled[,numeric.predictors] <- scale(d15.meta.scaled[,numeric.predictors])
+```
+
+```{r}
+# Filter rare taxa
+phylo.knowles.d15 <- filter_taxa(phylo.d15, function(x) sum(x > 1) > (0.05*length(x)), TRUE)
+```
+
+```{r}
+d15.clr <- clr(phylo.d15@otu_table)
+aitch.d15 <- vegdist(d15.clr, method = "euclid")
+```
+
+PCA
+```{r}
+aitch.pca.d15 <- prcomp(aitch.d15)
+```
+
+```{r}
+# Sum the total variance
+d.mvar <- sum(aitch.pca.d15$sdev^2)
+# Calculate the PC1 and PC2 variance
+PC1.label <- paste("PC1: ", round(sum(aitch.pca.d15$sdev[1]^2)/d.mvar, 3)*100,"%")
+PC2.label <- paste("PC2: ", round(sum(aitch.pca.d15$sdev[2]^2)/d.mvar, 3)*100,"%")
+
+#percentage <- round(aitch.pca$sdev / sum(aitch.pca$sdev) * 100, 2)
+#percentage <- paste( colnames(df_out), "(", paste( as.character(percentage), "%", ")", sep="") )
+
+#screeplot(aitch.pca)
+```
+
+Code from:
+https://huboqiang.cn/2016/03/03/RscatterPlotPCA
+```{r}
+df_out <- as.data.frame(aitch.pca.d15$x)
+df_out$ageBinned <- d15.meta$ageBinned
+df_out$habitat <- d15.meta$habitat
+df_out$layDateFirst <- d15.meta$layDateFirst
+df_out$broodSizeWhenSampled <- d15.meta$broodSizeWhenSampled
+df_out$nest <- d15.meta$nest
+
+
+head(df_out)
+```
+
+## ellipses for just age
+one plot for each age (ellipses each habitat)
+```{r}
+p <- ggplot(df_out,aes(x=PC1,y=PC2, color=ageBinned ))
+p <- p + geom_point() + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
+p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
+                      aes(group = (ageBinned), fill = ageBinned, colour = ageBinned))
+#p <- p + scale_color_discrete(name = "Age", labels = c("D15", "Adult"))
+#p <- p + scale_fill_discrete(element_blank(), labels = NULL)
+
+p <- p + scale_color_manual(name = "Age", labels = c("D15", "Adult"),
+                       values = c("D15" = "#1f78b4",
+                                  "Adult" = "#b2df8a")) +
+  scale_fill_manual(element_blank(), labels = NULL,
+                    values = c("D15" = "#1f78b4",
+                                  "Adult" = "#b2df8a")) +
+  guides(fill= "none")
+
+#p+scale_fill_manual(element_blank(), labels = NULL)
+#p <- p + scale_color_brewer(palette = "Set2") +theme_classic()
+
+#p + facet_grid(habitat~.)
+
+p+theme_classic()
+
+p.age.d15 <- p+theme_classic()
+```
+
+
+
+```{r}
+# p3 <- plot_grid(p.age+theme_classic()+labs(title=""), p.habitat+theme_classic()+labs(title=""), ncol=1, labels = c("A", "B"))
+# p3
+```
+
+# Arrange plots
+
+```{r}
+# dispersion.plot <- cowplot::plot_grid(age.dispersion, habitat.dispersion, ageXhabitat.dispersion, nrow = 3, labels = c("A", "B", "C"))
+# dispersion.plot
+# ggsave("dispersionPlots.tiff", plot = dispersion.plot, device = "tiff", path = "../R_figures", width = 15, height = 20, units = "cm", dpi = 175)
+```
+
+PCA + dispersion plots
+```{r}
+
+p4 <- plot_grid(plot_grid(p.age.d8+theme_classic()+labs(title="") + theme(legend.position = "none"),
+                          p.habitat.d8+theme_classic()+labs(title=""), 
+                          ncol=1, labels = c("a", "c")), 
+                plot_grid(age.dispersion.d8.limitAxes, p.age.d15+theme_classic(), ncol = 1, labels = c("b", "d")))
+
+p4
+
+ggsave("Fig3_PCA_and_dispersionPlots_split.pdf", plot = p4, device = "pdf", path = "../R_figures", width = 20, height = 15, units = "cm", dpi = 175)
+```
+
+
+#############################
+
 
 # All birds: CoDa
 
@@ -125,6 +389,7 @@ PC2.label <- paste("PC2: ", round(sum(aitch.pca$sdev[2]^2)/d.mvar, 3)*100,"%")
 
 #screeplot(aitch.pca)
 ```
+
 # PCA plots
 
 ## ellipses for just age
@@ -200,75 +465,10 @@ theme_classic2 <- function(base_size = 12, base_family = ""){
     )
 }
 ```
-
-```{r}
-p3 <- plot_grid(p.age+theme_classic()+labs(title=""), p.habitat+theme_classic()+labs(title=""), ncol=1, labels = c("A", "B"))
-p3
-```
-save high res image
-```{r}
-png("pca_out.png", width = 561, height = 476, units='mm', res = 300)
-p3
-dev.off()
-```
-
-# Dispersion plots, base r
-
-```{r}
-dispersion <- betadisper(aitchison.distance, metadata[,"ageBinned"])
-plot(dispersion, main = "", sub = "")
-```
-
-```{r}
-dispersion <- betadisper(aitchison.distance, metadata[,"habitat"])
-plot(dispersion, main = "", sub = "")
-```
-
-## Dispersion, ggplot age
-
-```{r}
-dispersion <- betadisper(aitchison.distance, metadata[,"ageBinned"])
-```
-
-code from https://chrischizinski.github.io/rstats/adonis/ 
-```{r}
-# extract the centroids and the site points in multivariate space.  
-centroids<-data.frame(grps=rownames(dispersion$centroids),data.frame(dispersion$centroids))
-vectors<-data.frame(group=dispersion$group,data.frame(dispersion$vectors))
-
-# to create the lines from the centroids to each point we will put it in a format that ggplot can handle
-seg.data<-cbind(vectors[,1:3],centroids[rep(1:nrow(centroids),as.data.frame(table(vectors$group))$Freq),2:3])
-names(seg.data)<-c("group","v.PCoA1","v.PCoA2","PCoA1","PCoA2")
-
-# create the convex hulls of the outermost points
-grp1.hull<-seg.data[seg.data$group=="D8",1:3][chull(seg.data[seg.data$group=="D8",2:3]),]
-grp2.hull<-seg.data[seg.data$group=="D15",1:3][chull(seg.data[seg.data$group=="D15",2:3]),]
-grp3.hull<-seg.data[seg.data$group=="Adult",1:3][chull(seg.data[seg.data$group=="Adult",2:3]),]
-all.hull<-rbind(grp1.hull,grp2.hull,grp3.hull)
-
-```
-
-
-```{r}
-age.dispersion <- ggplot() + 
-  geom_polygon(data=all.hull,aes(x=v.PCoA1,y=v.PCoA2, colour = group),alpha=0) +
-  geom_segment(data=seg.data,aes(x=v.PCoA1,xend=PCoA1,y=v.PCoA2,yend=PCoA2),alpha=0.30) + 
-  geom_point(data=centroids[,1:3], aes(x=PCoA1,y=PCoA2,colour=grps),size=2) + 
- # geom_label(aes(x =-0.3701276, y=0.6068285, label = "D8")) +
-  #geom_label(aes(x =0.8799281, y=0.4656689, label = "D15")) +
-  #geom_label(aes(x =0.4046661, y=-1.3055476, label = "Adult")) +
-  #geom_point(data=seg.data, aes(x=v.PCoA1,y=v.PCoA2,colour=group),size=2) +
-  labs(title="",x="",y="") +
-  theme_classic() +
-  scale_color_discrete(name = "Age")
-
-age.dispersion
-```
-
 ## Dispersion, ggplot habitat
 
 ```{r}
-dispersion <- betadisper(aitchison.distance, metadata[,"habitat"])
+dispersion <- betadisper(aitch.d8, d8.meta[,"habitat"])
 ```
 
 ```{r}
@@ -301,64 +501,238 @@ habitat.dispersion <- ggplot() +
 
 habitat.dispersion
 ```
-## Dispersion, ggplot age x habitat
 
+# Additional plots, reviewer
+
+Reviewer requested plots with other metrics
+
+## D8
+### BC
 ```{r}
-agexHabitat <- paste(metadata$ageBinned, metadata$habitat, sep = "-")
-dispersion <- betadisper(aitchison.distance, agexHabitat)
-```
+JDdist.d8 <- phyloseq::distance(phylo.d8, method="jaccard") # Jaccard is Presence/absence so shouldnt be affected by TSS
+BCdist.d8 <- phyloseq::distance(phylo.d8, method = "bray" ) 
 
-```{r}
-# extract the centroids and the site points in multivariate space.  
-centroids<-data.frame(grps=rownames(dispersion$centroids),data.frame(dispersion$centroids))
-vectors<-data.frame(group=dispersion$group,data.frame(dispersion$vectors))
+#ordBC.d8 <- ordinate(phylo.d8, method = "PCA", distance = BCdist.d8, k=3)
 
-# to create the lines from the centroids to each point we will put it in a format that ggplot can handle
-seg.data<-cbind(vectors[,1:3],centroids[rep(1:nrow(centroids),as.data.frame(table(vectors$group))$Freq),2:3])
-names(seg.data)<-c("group","v.PCoA1","v.PCoA2","PCoA1","PCoA2")
-
-# create the convex hulls of the outermost points
-grp1.hull<-seg.data[seg.data$group=="D8-Coniferous",1:3][chull(seg.data[seg.data$group=="D8-Coniferous",2:3]),]
-grp2.hull<-seg.data[seg.data$group=="D15-Coniferous",1:3][chull(seg.data[seg.data$group=="D15-Coniferous",2:3]),]
-grp3.hull<-seg.data[seg.data$group=="Adult-Coniferous",1:3][chull(seg.data[seg.data$group=="Adult-Coniferous",2:3]),]
-grp4.hull<-seg.data[seg.data$group=="D8-Deciduous",1:3][chull(seg.data[seg.data$group=="D8-Deciduous",2:3]),]
-grp5.hull<-seg.data[seg.data$group=="D15-Deciduous",1:3][chull(seg.data[seg.data$group=="D15-Deciduous",2:3]),]
-grp6.hull<-seg.data[seg.data$group=="Adult-Deciduous",1:3][chull(seg.data[seg.data$group=="Adult-Deciduous",2:3]),]
-all.hull<-rbind(grp1.hull, grp2.hull, grp3.hull, grp4.hull, grp5.hull, grp6.hull)
+#ordJD.d8 <- ordinate(phylo.d8, method = "PCA", distance = JDdist.d8, k=3)
 
 ```
 
-```{r}
-ageXhabitat.dispersion <- ggplot() + 
-  geom_polygon(data=all.hull,aes(x=v.PCoA1,y=v.PCoA2, colour = group),alpha=0) +
-  geom_segment(data=seg.data,aes(x=v.PCoA1,xend=PCoA1,y=v.PCoA2,yend=PCoA2),alpha=0.30) + 
-  geom_point(data=centroids[,1:3], aes(x=PCoA1,y=PCoA2,colour=grps),size=2) + 
-  #geom_label(aes(x =-0.02783881, y=-0.3417306, label = "Coniferous")) +
-  #geom_label(aes(x =0.51478625, y=0.2675555, label = "Deciduous")) +
-  #geom_point(data=seg.data, aes(x=v.PCoA1,y=v.PCoA2,colour=group),size=2) +
-  labs(title="",x="",y="") +
-  theme_classic() +
-  scale_color_discrete(name = "Age-Habitat")
 
-ageXhabitat.dispersion
+PCA
+```{r}
+aitch.pca.d8 <- prcomp(BCdist.d8)
 ```
 
-## Arrange plots
-
+Calculate the PC loadings for labels
+* took these from different sites and they disagree alot
 ```{r}
-dispersion.plot <- cowplot::plot_grid(age.dispersion, habitat.dispersion, ageXhabitat.dispersion, nrow = 3, labels = c("A", "B", "C"))
-dispersion.plot
-ggsave("dispersionPlots.tiff", plot = dispersion.plot, device = "tiff", path = "../R_figures", width = 15, height = 20, units = "cm", dpi = 175)
+# Sum the total variance
+d.mvar <- sum(aitch.pca.d8$sdev^2)
+# Calculate the PC1 and PC2 variance
+PC1.label <- paste("PC1: ", round(sum(aitch.pca.d8$sdev[1]^2)/d.mvar, 3)*100,"%")
+PC2.label <- paste("PC2: ", round(sum(aitch.pca.d8$sdev[2]^2)/d.mvar, 3)*100,"%")
 ```
-# PCA + dispersion plots
+
+Code from:
+https://huboqiang.cn/2016/03/03/RscatterPlotPCA
 ```{r}
+df_out <- as.data.frame(aitch.pca.d8$x)
+df_out$ageBinned <- d8.meta$ageBinned
+df_out$habitat <- d8.meta$habitat
+df_out$layDateFirst <- d8.meta$layDateFirst
+df_out$broodSizeWhenSampled <- d8.meta$broodSizeWhenSampled
+df_out$nest <- d8.meta$nest
 
-p4 <- plot_grid(plot_grid(p.age+theme_classic()+labs(title="") + theme(legend.position = "none"),
-                          p.habitat+theme_classic()+labs(title="")+ theme(legend.position = "none"), 
-                          ncol=1, labels = c("A", "C")), 
-                plot_grid(age.dispersion, habitat.dispersion, ncol = 1, labels = c("B", "D")))
 
-p4
+#head(df_out)
+```
 
-ggsave("Fig3_PCA_and_dispersionPlots.tiff", plot = p4, device = "tiff", path = "../R_figures", width = 20, height = 15, units = "cm", dpi = 175)
+one plot for each age
+```{r}
+p <- ggplot(df_out,aes(x=PC1,y=PC2, color=ageBinned ))
+p <- p + geom_point() + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
+p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
+                      aes(group = (ageBinned), fill = ageBinned, colour = ageBinned))
+p <- p + scale_color_discrete(name = "Age", labels = c("D8", "Adult"))
+p <- p + scale_fill_discrete(element_blank(), labels = NULL)
+#p + facet_grid(habitat~.)
+
+p+theme_classic()
+
+p.age.d8.bc <- p+theme_classic()
+```
+### JD
+PCA
+```{r}
+aitch.pca.d8 <- prcomp(JDdist.d8)
+```
+
+Calculate the PC loadings for labels
+* took these from different sites and they disagree alot
+```{r}
+# Sum the total variance
+d.mvar <- sum(aitch.pca.d8$sdev^2)
+# Calculate the PC1 and PC2 variance
+PC1.label <- paste("PC1: ", round(sum(aitch.pca.d8$sdev[1]^2)/d.mvar, 3)*100,"%")
+PC2.label <- paste("PC2: ", round(sum(aitch.pca.d8$sdev[2]^2)/d.mvar, 3)*100,"%")
+```
+
+Code from:
+https://huboqiang.cn/2016/03/03/RscatterPlotPCA
+```{r}
+df_out <- as.data.frame(aitch.pca.d8$x)
+df_out$ageBinned <- d8.meta$ageBinned
+df_out$habitat <- d8.meta$habitat
+df_out$layDateFirst <- d8.meta$layDateFirst
+df_out$broodSizeWhenSampled <- d8.meta$broodSizeWhenSampled
+df_out$nest <- d8.meta$nest
+
+
+#head(df_out)
+```
+
+```{r}
+p <- ggplot(df_out,aes(x=PC1,y=PC2, color=ageBinned ))
+p <- p + geom_point() + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
+p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
+                      aes(group = (ageBinned), fill = ageBinned, colour = ageBinned))
+p <- p + scale_color_discrete(name = "Age", labels = c("D8", "Adult"))
+p <- p + scale_fill_discrete(element_blank(), labels = NULL)
+#p + facet_grid(habitat~.)
+
+p+theme_classic()
+
+p.age.d8.jd <- p+theme_classic()
+```
+
+## D15
+```{r}
+JDdist.d15 <- phyloseq::distance(phylo.d15, method="jaccard") # Jaccard is Presence/absence so shouldnt be affected by TSS
+BCdist.d15 <- phyloseq::distance(phylo.d15, method = "bray" ) 
+
+```
+
+### BC
+
+PCA
+```{r}
+aitch.pca.d15 <- prcomp(BCdist.d15)
+```
+
+Calculate the PC loadings for labels
+* took these from different sites and they disagree alot
+```{r}
+# Sum the total variance
+d.mvar <- sum(aitch.pca.d15$sdev^2)
+# Calculate the PC1 and PC2 variance
+PC1.label <- paste("PC1: ", round(sum(aitch.pca.d15$sdev[1]^2)/d.mvar, 3)*100,"%")
+PC2.label <- paste("PC2: ", round(sum(aitch.pca.d15$sdev[2]^2)/d.mvar, 3)*100,"%")
+```
+
+Code from:
+https://huboqiang.cn/2016/03/03/RscatterPlotPCA
+```{r}
+df_out <- as.data.frame(aitch.pca.d15$x)
+df_out$ageBinned <- d15.meta$ageBinned
+df_out$habitat <- d15.meta$habitat
+df_out$layDateFirst <- d15.meta$layDateFirst
+df_out$broodSizeWhenSampled <- d15.meta$broodSizeWhenSampled
+df_out$nest <- d15.meta$nest
+
+
+#head(df_out)
+```
+
+one plot for each age
+```{r}
+p <- ggplot(df_out,aes(x=PC1,y=PC2, color=ageBinned ))
+p <- p + geom_point() + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
+p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
+                      aes(group = (ageBinned), fill = ageBinned, colour = ageBinned))
+p <- p + scale_color_discrete(name = "Age", labels = c("D15", "Adult"))
+p <- p + scale_fill_discrete(element_blank(), labels = NULL)
+#p + facet_grid(habitat~.)
+#p <- p + scale_color_viridis(name = "Age", labels = c("D15", "Adult"), discrete = T)
+
+p+theme_classic()
+
+p.age.d15.bc <- p+theme_classic()
+```
+
+```{r}
+p <- ggplot(df_out,aes(x=PC1,y=PC2, color=ageBinned ))
+p <- p + geom_point() + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
+p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
+                      aes(group = (ageBinned), fill = ageBinned, colour = ageBinned))
+p <- p + scale_fill_manual(values = c("#E7B800", "#00BFC4"), element_blank(), labels = NULL)
+p <- p + scale_color_manual(name = "Age", labels = c("D15", "Adult"), values = c("#E7B800", "#00BFC4"))
+
+
+#p + facet_grid(habitat~.)
+#p <- p + scale_color_viridis(name = "Age", labels = c("D15", "Adult"), discrete = T)
+
+p+theme_classic()
+
+p.age.d15.bc <- p+theme_classic()
+```
+
+Extract colours being used
+```{r}
+ggplot_build(p.age.d15.bc)$data
+# #F8766D, #00BFC4
+```
+
+### JD
+
+PCA
+```{r}
+aitch.pca.d15 <- prcomp(JDdist.d15)
+```
+
+Calculate the PC loadings for labels
+* took these from different sites and they disagree alot
+```{r}
+# Sum the total variance
+d.mvar <- sum(aitch.pca.d15$sdev^2)
+# Calculate the PC1 and PC2 variance
+PC1.label <- paste("PC1: ", round(sum(aitch.pca.d15$sdev[1]^2)/d.mvar, 3)*100,"%")
+PC2.label <- paste("PC2: ", round(sum(aitch.pca.d15$sdev[2]^2)/d.mvar, 3)*100,"%")
+```
+
+Code from:
+https://huboqiang.cn/2016/03/03/RscatterPlotPCA
+```{r}
+df_out <- as.data.frame(aitch.pca.d15$x)
+df_out$ageBinned <- d15.meta$ageBinned
+df_out$habitat <- d15.meta$habitat
+df_out$layDateFirst <- d15.meta$layDateFirst
+df_out$broodSizeWhenSampled <- d15.meta$broodSizeWhenSampled
+df_out$nest <- d15.meta$nest
+
+
+#head(df_out)
+```
+
+```{r}
+p <- ggplot(df_out,aes(x=PC1,y=PC2, color=ageBinned ))
+p <- p + geom_point() + xlab(PC1.label) + ylab(PC2.label) #, show.legend = F
+p <- p + stat_ellipse(geom = "polygon", type="t", alpha=0.1, 
+                      aes(group = (ageBinned), fill = ageBinned, colour = ageBinned))
+p <- p + scale_fill_manual(values = c("#E7B800", "#00BFC4"), element_blank(), labels = NULL)
+p <- p + scale_color_manual(name = "Age", labels = c("D15", "Adult"), values = c("#E7B800", "#00BFC4"))
+#p <- p + scale_fill_discrete(element_blank(), labels = NULL)
+#p + facet_grid(habitat~.)
+
+p+theme_classic()
+
+p.age.d15.jd <- p+theme_classic()
+```
+
+# Arrange plots
+```{r}
+esm.beta.plots <- cowplot::plot_grid(p.age.d8.bc, p.age.d8.jd, p.age.d15.bc, p.age.d15.jd, nrow = 2, labels = c("a", "b", "c", "d"))
+
+esm.beta.plots
+ggsave("reviewer2_supp.tiff", plot = esm.beta.plots, device = "tiff", path = "../R_figures", width = 17.5, height = 15, units = "cm", dpi = 175)
 ```

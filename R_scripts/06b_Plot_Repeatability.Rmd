@@ -472,19 +472,19 @@ paired.rpt.all
 # repeatability plots only
 
 ```{r}
-rpt.combine <- plot_grid(plot_grid(rpt.confint.shannon + ylab("Alpha \n diversity") + theme(axis.title.x=element_blank()),
+rpt.combine <- cowplot::plot_grid(cowplot::plot_grid(rpt.confint.shannon + ylab("Alpha \n diversity") + theme(axis.title.x=element_blank()),
                                   rpt.confint.chao+ theme(axis.title.x=element_blank()), 
-                                                          nrow = 1, labels = c("A", "B")),
-                         plot_grid(rpt.confint.proteo + ylab("Relative \n abundance")+ theme(axis.title.x=element_blank()),
+                                                          nrow = 1, labels = c("a", "b")),
+                         cowplot::plot_grid(rpt.confint.proteo + ylab("Relative \n abundance")+ theme(axis.title.x=element_blank()),
                                    rpt.confint.firmic + theme(axis.title.x=element_blank()), 
-                                   nrow = 1, labels = c("C", "D")),
-                         plot_grid(rpt.confint.pc1 + ylab("Beta \n diversity"), rpt.confint.pc2, 
-                                   nrow = 1, labels = c("E", "F")), nrow = 3)
+                                   nrow = 1, labels = c("c", "d")),
+                         cowplot::plot_grid(rpt.confint.pc1 + ylab("Beta \n diversity"), rpt.confint.pc2, 
+                                   nrow = 1, labels = c("e", "f")), nrow = 3)
 
 rpt.combine
 ```
 
 ```{r}
-ggsave("Fig6_rpt.tiff", plot = rpt.combine, device = "tiff", path = "../R_figures", width = 15, height = 10, units = "cm", dpi = 250)
+ggsave("Fig5_rpt.pdf", plot = rpt.combine, device = "pdf", path = "../R_figures", width = 15, height = 10, units = "cm", dpi = 250)
 ```
 
