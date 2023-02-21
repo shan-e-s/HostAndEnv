@@ -59,7 +59,7 @@ Agreement repeatabilities represent the group-level variance over the sum of all
 
 ## Site only
 ```{r}
-rpt.shannon.site.only <- rpt(log(shannon) ~ (1|site), grname = "site", data = nestling.metadata, datatype = "Gaussian", nboot = 100, nperm = 0, parallel = T)
+rpt.shannon.site.only <- rpt(log(shannon) ~ (1|site), grname = "site", data = nestling.metadata, datatype = "Gaussian", nboot = 100, nperm = 10000, parallel = T)
 
 print(rpt.shannon.site.only)
 #summary(rpt.shannon.birdID.only)
@@ -123,7 +123,7 @@ Try with nested variables
 
 ## Bird ID, nest, site and fixed
 ```{r}
-rpt.shannon.birdID.nest.site.fixed <- rpt(log(shannon) ~ ageBinned*habitat + (1|bird.ID) + (1|nest) + (1|site), grname = c("bird.ID", "nest", "site", "Fixed"), data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 0, parallel = T)
+rpt.shannon.birdID.nest.site.fixed <- rpt(log(shannon) ~ ageBinned*habitat + (1|bird.ID) + (1|nest) + (1|site), grname = c("bird.ID", "nest", "site", "Fixed"), data = nestling.metadata, datatype = "Gaussian", nboot = 1000, nperm = 1000, parallel = T)
 print(rpt.shannon.birdID.nest.site.fixed)
 #summary(rpt.shannon.birdID.only)
 ```
