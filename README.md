@@ -1,0 +1,1 @@
+Raw data and R script from Somers SE, Davidson GL, Johnson CN, Reichert MS, Crane JMS, Ross RP, Stanton C, Quinn JL. Individual variation in the avian gut microbiota: The influence of host state and environmental heterogeneity. Mol Ecol. 2023 Jun;32(12):3322-3339. doi: 10.1111/mec.16919.
